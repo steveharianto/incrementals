@@ -13,7 +13,6 @@
       --accent: #38bdf8;
       --border: #334155;
       --success: #22c55e;
-      --warning: #eab308;
     }
 
     @media (prefers-color-scheme: light) {
@@ -61,12 +60,6 @@
       margin-bottom: 1.25rem;
     }
 
-    /* Search Control */
-    .search-box {
-      position: relative;
-      width: 100%;
-    }
-
     .search-input {
       width: 100%;
       padding: 0.75rem 1rem;
@@ -87,10 +80,9 @@
       color: var(--muted);
     }
 
-    /* Game List Grid */
     .game-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
       gap: 1rem;
       margin-top: 1.5rem;
     }
@@ -108,7 +100,7 @@
       transition: transform 0.15s ease, border-color 0.15s ease;
     }
 
-    .game-card.available:hover {
+    .game-card:hover {
       transform: translateY(-2px);
       border-color: var(--accent);
     }
@@ -116,8 +108,7 @@
     .card-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 0.5rem;
+      align-items: center;
       margin-bottom: 0.75rem;
     }
 
@@ -125,7 +116,6 @@
       font-size: 1.1rem;
       font-weight: 600;
       text-transform: capitalize;
-      word-break: break-word;
     }
 
     .status-badge {
@@ -133,17 +123,8 @@
       font-weight: 600;
       padding: 0.2rem 0.5rem;
       border-radius: 12px;
-      white-space: nowrap;
-    }
-
-    .status-badge.available {
       background-color: rgba(34, 197, 94, 0.15);
       color: var(--success);
-    }
-
-    .status-badge.no-index {
-      background-color: rgba(234, 179, 8, 0.15);
-      color: var(--warning);
     }
 
     .play-btn {
@@ -175,132 +156,65 @@
 
   <header>
     <h1>⚡ Incremental Games Directory</h1>
-    <p class="subtitle">Search available idle and incremental web projects directly from this repo.</p>
+    <p class="subtitle">Search available idle and incremental web projects.</p>
     
-    <div class="search-box">
-      <input 
-        type="text" 
-        id="searchInput" 
-        class="search-input" 
-        placeholder="Type a game name to check availability..."
-        oninput="filterGames()"
-      >
-    </div>
+    <input 
+      type="text" 
+      id="searchInput" 
+      class="search-input" 
+      placeholder="Search games..."
+      oninput="filterGames()"
+    >
   </header>
 
   <main>
-    <div id="gameGrid" class="game-grid">
-      <div class="empty-state">Scanning repository for games...</div>
-    </div>
+    <div id="gameGrid" class="game-grid"></div>
   </main>
 
   <footer>
-    <p>Auto-indexed via GitHub API • Hosted on GitHub Pages</p>
+    <p>Hosted on GitHub Pages</p>
   </footer>
 
   <script>
-    // Config: Pointing to your GitHub username and repo name
-    const GITHUB_USER = 'steveharianto';
-    const REPO_NAME = 'incremental';
+    const games = [
+      "signal",
+    ];
 
-    let allGames = [];
-
-    async function fetchRepoContents() {
-      const grid = document.getElementById('gameGrid');
-      
-      try {
-        // Fetch contents of the repository root
-        const response = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/`);
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch repo data');
-        }
-
-        const data = await response.json();
-
-        // Filter only subdirectories (folders) and exclude metadata/hidden folders
-        const folderItems = data.filter(item => 
-          item.type === 'dir' && !item.name.startsWith('.') && !item.name.startsWith('_')
-        );
-
-        if (folderItems.length === 0) {
-          grid.innerHTML = '<div class="empty-state">No game folders found in this repository yet.</div>';
-          return;
-        }
-
-        // Check each folder for an index.html file
-        allGames = await Promise.all(
-          folderItems.map(async (folder) => {
-            const cleanName = folder.name.replace(/[-_]/g, ' ');
-            const gameUrl = `./${folder.name}/`;
-            
-            // Check if index.html actually exists in the folder
-            let isAvailable = false;
-            try {
-              const checkIndex = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/${folder.name}/index.html`);
-              isAvailable = checkIndex.ok;
-            } catch (e) {
-              isAvailable = false;
-            }
-
-            return {
-              folderName: folder.name,
-              displayName: cleanName,
-              url: gameUrl,
-              available: isAvailable
-            };
-          })
-        );
-
-        renderGames(allGames);
-
-      } catch (error) {
-        grid.innerHTML = `<div class="empty-state">Unable to load directory directly from GitHub API. Ensure your repository is public.</div>`;
-      }
-    }
-
-    function renderGames(games) {
+    function renderGames(gameList) {
       const grid = document.getElementById('gameGrid');
 
-      if (games.length === 0) {
-        grid.innerHTML = `<div class="empty-state">No games match your search.</div>`;
+      if (gameList.length === 0) {
+        grid.innerHTML = `<div class="empty-state">No games found matching your search.</div>`;
         return;
       }
 
-      grid.innerHTML = games.map(game => `
-        <a 
-          href="${game.available ? game.url : '#'}" 
-          class="game-card ${game.available ? 'available' : ''}"
-          ${!game.available ? 'onclick="event.preventDefault();"' : ''}
-        >
-          <div>
-            <div class="card-header">
-              <span class="game-title">${game.displayName}</span>
-              <span class="status-badge ${game.available ? 'available' : 'no-index'}">
-                ${game.available ? 'Ready' : 'No index.html'}
-              </span>
+      grid.innerHTML = gameList.map(folder => {
+        const displayName = folder.replace(/[-_]/g, ' ');
+        return `
+          <a href="./${folder}/" class="game-card">
+            <div>
+              <div class="card-header">
+                <span class="game-title">${displayName}</span>
+                <span class="status-badge">Ready</span>
+              </div>
             </div>
-          </div>
-          <div class="play-btn">
-            ${game.available ? 'Play Game &rarr;' : 'Unavailable'}
-          </div>
-        </a>
-      `).join('');
+            <div class="play-btn">Play Game &rarr;</div>
+          </a>
+        `;
+      }).join('');
     }
 
     function filterGames() {
       const query = document.getElementById('searchInput').value.toLowerCase().trim();
-      
-      const filtered = allGames.filter(game => 
-        game.displayName.toLowerCase().includes(query) || 
-        game.folderName.toLowerCase().includes(query)
+      const filtered = games.filter(folder => 
+        folder.toLowerCase().includes(query) || 
+        folder.replace(/[-_]/g, ' ').toLowerCase().includes(query)
       );
-
       renderGames(filtered);
     }
 
-    // Initialize scan on load
-    fetchRepoContents();
+    // Render initially
+    renderGames(games);
   </script>
 
 </body>
