@@ -1,0 +1,1953 @@
+<!doctype html>
+<!-- CIPHER - an incremental idle game you cannot read. Co-authored with CoCo -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CIPHER</title>
+<style>
+:root{
+  --bg:#0b0c0d; --panel:#0f1113; --line:#22262a; --line-hi:#3a4046;
+  --dim:#6b7075; --dimmer:#4a4f54; --fg:#c8ccd0; --accent:#8fb0c8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg)}
+body{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:13px; line-height:1.5; font-variant-numeric:tabular-nums;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+.wrap{max-width:1600px;margin:0 auto;padding:10px 12px 40px}
+
+/* ---- header ---- */
+header{border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:10px}
+.hrow{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.brand{letter-spacing:.32em;color:var(--fg)}
+.hsp{flex:1}
+.hbtn{background:none;border:1px solid var(--line);color:var(--dim);
+  font:inherit;padding:0 7px;cursor:pointer}
+.hbtn:hover{border-color:var(--line-hi);color:var(--fg)}
+.tipline{color:var(--dim);margin-top:5px;min-height:1.5em}
+.tipline b{color:var(--accent);font-weight:normal;margin-right:8px}
+.tipx{border:none;background:none;color:var(--dimmer);font:inherit;cursor:pointer;margin-left:8px}
+.tipx:hover{color:var(--fg)}
+
+/* ---- layout ---- */
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:start}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);background:var(--panel);padding:8px 9px;margin-bottom:10px}
+.ptitle{color:var(--dim);letter-spacing:.2em;font-size:11px;margin-bottom:6px;
+  display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ptitle span.r{letter-spacing:0;color:var(--dimmer)}
+
+/* ---- rows / values ---- */
+.row{display:flex;align-items:baseline;gap:8px;padding:1px 0}
+.row .k{color:var(--dim);flex:0 0 auto}
+.row .v{margin-left:auto;text-align:right;white-space:nowrap}
+.num{white-space:nowrap}
+.dimtxt{color:var(--dim)}
+.dimmer{color:var(--dimmer)}
+.acc{color:var(--accent)}
+.bar{height:3px;background:#171a1d;border:0;margin:2px 0 5px;position:relative;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--dimmer);width:0%}
+.bar.on i{background:var(--accent)}
+
+/* ---- buttons ---- */
+button.b{display:block;width:100%;text-align:left;background:none;color:var(--fg);
+  border:1px solid var(--line);font:inherit;padding:3px 6px;margin:3px 0;cursor:pointer}
+button.b:hover{border-color:var(--line-hi)}
+button.b[disabled]{color:var(--dimmer);border-color:var(--line);cursor:default}
+button.b[disabled]:hover{border-color:var(--line)}
+button.b.ok{border-color:var(--line-hi)}
+button.b.ok .c{color:var(--accent)}
+button.b .c{color:var(--dim);float:right;margin-left:10px}
+button.b.on{border-color:var(--line-hi)}
+button.s{background:none;border:1px solid var(--line);color:var(--dim);font:inherit;
+  width:20px;text-align:center;cursor:pointer;padding:0}
+button.s:hover{border-color:var(--line-hi);color:var(--fg)}
+button.s[disabled]{color:#2c3033;cursor:default}
+.inline{display:flex;gap:4px;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+
+/* ---- allocation ---- */
+.alloc{display:grid;grid-template-columns:auto 20px 2.6em 20px auto;gap:4px;align-items:center;padding:2px 0}
+.alloc .nm{color:var(--dim)}
+.alloc .ct{text-align:center}
+.alloc .rt{text-align:right;color:var(--dim);font-size:12px}
+
+/* ---- glyph table ---- */
+.gt{width:100%;border-collapse:collapse}
+.gt th{color:var(--dimmer);font-weight:normal;text-align:right;font-size:11px;
+  border-bottom:1px solid var(--line);padding:1px 3px}
+.gt th.l{text-align:left}
+.gt td{padding:1px 3px;text-align:right;border-bottom:1px solid #14171a;cursor:pointer}
+.gt td.l{text-align:left}
+.gt tr:hover td{background:#131619}
+.gt tr.sel td{background:#171b1f}
+.gt tr.pen td{color:var(--dimmer)}
+.mini{height:2px;background:#171a1d;width:34px;display:inline-block;vertical-align:middle}
+.mini i{display:block;height:100%;background:var(--dimmer)}
+.mini.near i{background:var(--accent)}
+.keys{display:flex;flex-wrap:wrap;gap:2px;margin-top:5px}
+.keys button{background:none;border:1px solid var(--line);color:var(--fg);font:inherit;
+  width:20px;padding:0;cursor:pointer}
+.keys button:hover{border-color:var(--line-hi)}
+.solved{color:var(--dim);word-spacing:2px;line-height:1.9}
+.solved b{color:var(--fg);font-weight:normal}
+
+/* ---- log ---- */
+.log{max-height:300px;overflow-y:auto;line-height:1.7}
+.log div{border-bottom:1px solid #131619;padding:1px 0}
+.log .ts{color:var(--dimmer);margin-right:7px}
+.log .d{color:var(--dim)}
+
+/* ---- glyphs ---- */
+svg.g{width:.66em;height:.95em;vertical-align:-.16em;stroke:currentColor;
+  stroke-width:.42;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.92}
+.w{white-space:nowrap;margin-right:.42em;display:inline-block}
+.txt{line-height:2}
+
+/* ---- overlay ---- */
+.ov{position:fixed;inset:0;background:rgba(6,7,8,.93);z-index:50;overflow-y:auto;display:none}
+.ov.show{display:block}
+.ovin{max-width:820px;margin:34px auto;border:1px solid var(--line);background:var(--panel);padding:18px 20px}
+.ovin h1{font-size:13px;letter-spacing:.32em;margin:0 0 4px;font-weight:normal}
+.ovin h2{font-size:11px;letter-spacing:.2em;color:var(--dim);margin:16px 0 6px;font-weight:normal;
+  border-top:1px solid var(--line);padding-top:8px}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 14px}
+dt{color:var(--accent)}
+dd{margin:0;color:var(--dim)}
+textarea{width:100%;height:70px;background:#0a0b0c;color:var(--dim);border:1px solid var(--line);
+  font:inherit;font-size:11px;padding:4px;resize:vertical}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="hrow">
+      <div class="brand">CIPHER</div>
+      <div class="dimmer" id="hleg">legibility <span id="hlegv">0%</span></div>
+      <div class="bar" id="hbar" style="width:150px;margin:0"><i></i></div>
+      <div class="hsp"></div>
+      <div class="dimmer" id="hstat"></div>
+      <button class="hbtn" id="bhelp">?</button>
+    </div>
+    <div class="tipline" id="tipline"></div>
+  </header>
+  <div class="cols">
+    <div id="c1"></div>
+    <div id="c2"></div>
+    <div id="c3"></div>
+  </div>
+</div>
+<div class="ov" id="ov"><div class="ovin" id="ovin"></div></div>
+<script>
+"use strict";
+
+/* ============================================================================
+   1. DECIMAL - unbounded-exponent number type {m,e}, 1 <= |m| < 10
+   R1: native floats die at 1e308; this game exceeds that.
+   R4: hard exponent wall at 1e250; nothing may ever reach Infinity.
+   ========================================================================== */
+var EXP_WALL = 1e250;
+var EXP_FLOOR = -320;
+
+function D(m, e) {
+  if (!(this instanceof D)) return new D(m, e);
+  this.m = m === undefined ? 0 : m;
+  this.e = e === undefined ? 0 : e;
+  this.nrm();
+}
+D.prototype.nrm = function () {
+  var m = this.m, e = this.e;
+  if (typeof m !== "number" || typeof e !== "number" || !isFinite(m) || !isFinite(e)) {
+    this.m = 1; this.e = EXP_WALL; return this;          // R4: walled, never Infinity
+  }
+  if (m === 0) { this.m = 0; this.e = 0; return this; }
+  var d = Math.floor(Math.log10(Math.abs(m)));
+  if (d !== 0 && isFinite(d)) { m = m / Math.pow(10, d); e += d; }
+  var guard = 0;
+  while (Math.abs(m) >= 10 && guard++ < 40) { m /= 10; e += 1; }
+  while (Math.abs(m) < 1 && guard++ < 40) { m *= 10; e -= 1; }
+  if (!isFinite(m) || !isFinite(e)) { this.m = 1; this.e = EXP_WALL; return this; }
+  if (e >= EXP_WALL) { e = EXP_WALL; m = m < 0 ? -1 : 1; }
+  if (e < EXP_FLOOR) { m = 0; e = 0; }
+  this.m = m; this.e = e; return this;
+};
+D.of = function (x) { return new D(x, 0); };
+D.log = function (l) {                                   // fromLog10
+  if (!isFinite(l)) return l < 0 ? new D(0, 0) : new D(1, EXP_WALL);
+  var e = Math.floor(l);
+  return new D(Math.pow(10, l - e), e);
+};
+D.fromLog10 = D.log;
+D.ZERO = function () { return new D(0, 0); };
+D.ONE = function () { return new D(1, 0); };
+
+D.prototype.isZero = function () { return this.m === 0; };
+D.prototype.walled = function () { return this.e >= EXP_WALL; };
+D.prototype.copy = function () { return new D(this.m, this.e); };
+D.prototype.neg = function () { return new D(-this.m, this.e); };
+D.prototype.abs = function () { return new D(Math.abs(this.m), this.e); };
+
+D.prototype.add = function (o) {
+  if (this.m === 0) return o.copy();
+  if (o.m === 0) return this.copy();
+  var a = this, b = o;
+  if (b.e > a.e) { a = o; b = this; }
+  var dx = b.e - a.e;
+  if (dx < -17) return a.copy();
+  return new D(a.m + b.m * Math.pow(10, dx), a.e);
+};
+D.prototype.sub = function (o) { return this.add(o.neg()); };
+D.prototype.mul = function (o) {
+  if (this.m === 0 || o.m === 0) return new D(0, 0);
+  return new D(this.m * o.m, this.e + o.e);
+};
+D.prototype.div = function (o) {
+  if (o.m === 0 || this.m === 0) return new D(0, 0);   // R10: guard zero
+  return new D(this.m / o.m, this.e - o.e);
+};
+D.prototype.mulN = function (x) { return this.mul(D.of(x)); };
+D.prototype.log10 = function () {
+  if (this.m <= 0) return -Infinity;
+  return this.e + Math.log10(this.m);
+};
+D.prototype.log10z = function () {                       // safe log10, zero -> 0
+  if (this.m <= 0) return 0;
+  var l = this.e + Math.log10(this.m);
+  return l > 0 ? l : 0;
+};
+D.prototype.pow = function (x) {
+  if (x === 0) return new D(1, 0);
+  if (this.m === 0) return new D(0, 0);                  // R10: 0^n = 0
+  if (this.m === 1 && this.e === 0) return new D(1, 0);
+  var s = this.m < 0 ? -1 : 1;
+  var l = this.abs().log10() * x;
+  var r = D.log(l);
+  if (s < 0 && Math.abs(x % 2) === 1) r = r.neg();
+  return r;
+};
+D.prototype.cmp = function (o) {
+  var sa = this.m === 0 ? 0 : (this.m > 0 ? 1 : -1);
+  var sb = o.m === 0 ? 0 : (o.m > 0 ? 1 : -1);
+  if (sa !== sb) return sa < sb ? -1 : 1;
+  if (sa === 0) return 0;
+  var f = sa > 0 ? 1 : -1;
+  if (this.e !== o.e) return this.e < o.e ? -f : f;
+  if (this.m === o.m) return 0;
+  return this.m < o.m ? -f : f;
+};
+D.prototype.gte = function (o) { return this.cmp(o) >= 0; };
+D.prototype.gt = function (o) { return this.cmp(o) > 0; };
+D.prototype.lt = function (o) { return this.cmp(o) < 0; };
+D.prototype.lte = function (o) { return this.cmp(o) <= 0; };
+D.prototype.max = function (o) { return this.cmp(o) >= 0 ? this.copy() : o.copy(); };
+D.prototype.min = function (o) { return this.cmp(o) <= 0 ? this.copy() : o.copy(); };
+D.prototype.num = function () {
+  if (this.e > 300) return 1e300;
+  if (this.e < -300) return 0;
+  return this.m * Math.pow(10, this.e);
+};
+D.prototype.ser = function () { return [this.m, this.e]; };
+D.de = function (a) {
+  if (a instanceof D) return a.copy();
+  if (Array.isArray(a) && a.length === 2) return new D(+a[0] || 0, +a[1] || 0);
+  if (typeof a === "number") return D.of(isFinite(a) ? a : 0);
+  return new D(0, 0);
+};
+
+/* geometric bulk cost: base * r^n0 * (r^k - 1)/(r - 1)  -- exact, overflow-safe */
+function geoSum(base, r, n0, k) {
+  if (k <= 0) return new D(0, 0);
+  var lr = Math.log10(r);
+  var tail = D.log(k * lr).sub(D.ONE());
+  return base.mul(D.log(n0 * lr)).mul(tail).div(D.of(r - 1));
+}
+/* largest k with geoSum(base,r,n0,k) <= funds; never overdraws */
+function maxBuy(base, r, n0, funds, cap) {
+  if (funds.m <= 0) return 0;
+  var lr = Math.log10(r);
+  var X = funds.mul(D.of(r - 1)).div(base.mul(D.log(n0 * lr)));
+  if (X.m <= 0) return 0;
+  var L = X.e > 14 ? X.log10() : Math.log10(1 + X.num());
+  var k = Math.floor(L / lr);
+  if (!isFinite(k) || k < 0) k = 0;
+  if (cap !== undefined && k > cap) k = cap;
+  var guard = 0;
+  while (k > 0 && geoSum(base, r, n0, k).gt(funds) && guard++ < 64) k -= 1;
+  guard = 0;
+  while ((cap === undefined || k + 1 <= cap) && geoSum(base, r, n0, k + 1).lte(funds) && guard++ < 64) k += 1;
+  return k;
+}
+
+/* ============================================================================
+   2. FORMAT - display helpers, including glyph-aware numeric output
+   ========================================================================== */
+function fmt(d) {
+  if (!(d instanceof D)) d = D.de(d);
+  if (d.m === 0) return "0";
+  if (d.walled()) return "9.99e250";
+  var neg = d.m < 0 ? "-" : "";
+  var a = d.abs();
+  if (a.e < 0) return neg + a.num().toFixed(2);
+  if (a.e < 6) {
+    var n = a.num();
+    if (a.e < 3) return neg + (n < 10 ? n.toFixed(2) : n.toFixed(1));
+    return neg + Math.floor(n).toString();
+  }
+  return neg + a.m.toFixed(2) + "e" + a.e;
+}
+function fmtPct(x) { return (x * 100).toFixed(1) + "%"; }
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s";
+  if (s < 86400) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+  return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+}
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+/* Numbers are part of the script too: each digit is a glyph until decoded. */
+function numHTML(d) {
+  var s = fmt(d), out = "", i;
+  for (i = 0; i < s.length; i++) {
+    var c = s[i];
+    if (c >= "0" && c <= "9") out += digitHTML(c);
+    else out += '<span class="dimmer">' + esc(c) + "</span>";
+  }
+  return '<span class="num">' + out + "</span>";
+}
+function numHTMLn(n) { return numHTML(D.of(n)); }
+function digitHTML(c) {
+  var g = SCRIPT.digitGlyph[c];
+  if (g === undefined || S.res[g]) return c;
+  return glyphSVG(g);
+}
+
+/* ============================================================================
+   3. CONTENT - every tunable number and every content table lives here.
+   Adding an upgrade / lexicon node / canon ability / tier feature / tip is
+   ONE array entry and requires no change to logic anywhere else.
+   ========================================================================== */
+var K = {
+  /* --- loop --- */
+  STEP: 0.05,             // fixed simulation step (s)
+  MAXFRAME: 1.0,          // clamp per frame so a throttled tab cannot explode
+  UI_MS: 100,             // 10 Hz text updates
+  SAVE_MS: 10000,
+  CHUNK: 2.0,             // offline catch-up chunk (s)
+
+  /* --- scribes --- */
+  START_SCRIBES: 3,
+  SCRIBE_BASE: 15,
+  SCRIBE_GROWTH: 2.2,     // R5: log10(2.2)=0.3424 > log10(2)=0.3010 = worst marginal gain
+  COPY_POWER: 1.0,
+  COUNT_POWER: 0.42,
+  CROSS_POWER: 0.16,
+
+  /* --- legibility --- */
+  LEG_GAIN: 4,            // legMult = 1 + LEG_GAIN * L^2, L<=1 so bounded by 5
+
+  /* --- decoding ---
+     Occurrences are counted in log-magnitude units: occ = OCCK*freq*log10(1+corpus).
+     Corpus is exponential in time, so log10(corpus) is roughly linear in time and
+     sqrt(occ) grows only as sqrt(t). This keeps decoding a *timed activity* at any
+     depth instead of collapsing to instant once corpus is astronomical (R7 damping). */
+  OCCK: 60000,
+  AN_W: 0.62,             // analysis throughput weight on log10(1+analysisRate)
+  CTX_W: 0.44,            // context bonus weight on log10(1+context)
+  DEC_BASE: 1.0,
+  THR_DIGIT: 1050,
+  THR_LETTER: 195000,
+  THR_EXTRA: 260000,       // nulls / ligatures / positional forms are harder
+  /* A rare mark needs more confidence: the statistical signal is weaker next to
+     the noise of a finite corpus. This exponent is what SPREADS the alphabet out
+     over the run - without it every glyph resolves at almost the same moment. */
+  RARE_REF: 0.06,
+  RARE_POW: 1.80,
+  RARE_CLAMP: 0.012,   // rarity stops biting below this frequency
+  TIER_THR_POW: 1.10,     // threshold scales with (tier)^POW - polynomial, not exponential
+
+  /* --- guessing --- */
+  GUESS_BASE: 40,
+  GUESS_TIER: 2.1,        // cost multiplier per tier
+  PEN_TIME: 20,
+  PEN_MULT: 0.35,
+  AUTOGUESS_EVERY: 9,
+  LIG_CTX: 4.0,           // context needed before ligature work is efficient
+
+  /* --- upgrades --- */
+  BLIND_DISC: 0.40,
+  DECODE_NAME_BASE: 30,
+  DECODE_NAME_TIER: 2.4,
+
+  /* --- transcribe / lexicon --- */
+  LEX_LOG_K: 0.155,       // lexGain = 10^(LEX_LOG_K*log10(lifeCorpus) - LEX_OFF) * tierBonus
+  LEX_OFF: 0.30,
+  LEX_TIER: 1.35,
+  LEX_DIV_FLOOR: 1.0,     // R6: conversion divisor floored, loop gain pinned below 1
+
+  /* --- publish --- */
+  PUB_BASE: 2.05,          // R8: requirementLog = PUB_BASE*(1+n)^PUB_POW  (log10 lifetime lexicon)
+  PUB_POW: 1.50,
+
+  /* --- asymptotic node (the unlimited tail) --- */
+  ASYMP_FLOOR: 0.16,      // thresholds approach 16% of base, never reach it
+  ASYMP_STEP: 0.85,
+
+  /* --- offline --- */
+  OFFLINE_EFF: 0.50,
+  OFFLINE_CAP: 4 * 3600,
+
+  /* --- misc --- */
+  LOG_MAX: 220,
+  NULL_RATE: 0.055
+};
+
+/* true English letter frequencies - drive occurrence counts and honest stats */
+var LFREQ = {
+  a: .0817, b: .0150, c: .0278, d: .0425, e: .1270, f: .0223, g: .0202, h: .0609,
+  i: .0697, j: .0015, k: .0077, l: .0403, m: .0241, n: .0675, o: .0751, p: .0193,
+  q: .0010, r: .0599, s: .0633, t: .0906, u: .0276, v: .0098, w: .0236, x: .0015,
+  y: .0197, z: .0007
+};
+var ALPHA = "abcdefghijklmnopqrstuvwxyz".split("");
+var DIGITS = "0123456789".split("");
+var DIGIT_FREQ = 0.030;
+
+/* difficulty features, applied cumulatively as tier rises - one entry per tier */
+var TIERS = [
+  { tier: 1, name: "plain substitution", feat: [] },
+  { tier: 2, name: "homophones", feat: ["homo"] },
+  { tier: 3, name: "nulls", feat: ["homo", "null"] },
+  { tier: 4, name: "ligatures", feat: ["homo", "null", "lig"] },
+  { tier: 5, name: "positional forms", feat: ["homo", "null", "lig", "init"] }
+];
+var HOMO_LETTERS = ["e", "t", "a", "o", "n"];      // tier 2: these get a second glyph
+var NULL_COUNT = 3;                                // tier 3
+var LIGS = ["th", "ing", "er"];                    // tier 4
+var INIT_LETTERS = ["s", "t", "a", "w", "h"];       // tier 5
+
+/* ---- corpus vocabulary: ~520 common English words ---- */
+var WORDS = ("the be to of and a in that have i it for not on with he as you do at this but his by from they we say her she or an will my one all would there their what so up out if about who get which go me when make can like time no just him know take people into year your good some could them see other than then now look only come its over think also back after use two how our work first well way even new want because any these give day most us man find here thing tell try ask need feel become leave put mean keep let begin seem help talk turn start might show hear play run move live believe bring happen write sit stand lose pay meet include continue set learn change lead understand watch follow stop create speak read spend grow open walk win teach offer remember consider appear buy serve die send build stay fall cut reach kill remain suggest raise pass sell require report decide pull hold carry break receive agree support hit produce eat cover catch draw choose cause point return form allow explain hope develop carry describe wear name later long great little own old right big high different small large next early young important few public bad same able best better free true whole sure certain clear common dark deep dry easy empty final full green hard heavy hot late light local low main modern near new normal open past plain poor quick quiet rare ready real recent short simple single slow soft strong sudden thin usual warm weak white wide wild wrong hand part child eye woman place week case point government company number group problem fact word month lot book night thing water room mother area money story month lot right study game line end member law car city name team minute idea kid body information back parent face others level office door health person art war history party result change morning reason research girl guy moment air teacher force education foot boy age policy process music market sense nation plan college interest death experience effect use class control care field development role effort rule mind quality figure page letter mark line word sound voice sign paper page ink page hall table shelf lamp night dust light glass leaf edge stone river bridge tower gate wall road path field wood tree bird hill wind rain sun moon star sky sea shore ship sail rope knot chain key lock box chest map north south east west long slow near far under over behind beside between through above below within without again always never often once soon still yet almost enough quite rather very too much many more less least much every each both either neither none other another such same own very just only well then there where here why how what which who whom whose that this these those all any some no not nor but and or if because while when until after before since though although unless whether than that as so very much more most little less least well better best badly worse worst"
+).split(/\s+/);
+var WORDSET = (function () { var m = {}, i; for (i = 0; i < WORDS.length; i++) m[WORDS[i]] = 1; return Object.keys(m); })();
+
+/* filler corpus sentence templates - {} draws a random word */
+var TEMPLATES = [
+  "the {} of the {} is not the {} of the {}",
+  "we copy {} lines and lose {} of them",
+  "a {} {} was found under the {}",
+  "count the {} marks then count them again",
+  "the scribe wrote {} and meant {}",
+  "no {} without a {} to hold it",
+  "the {} passage names a {} and a {}",
+  "read the {} aloud until it becomes a {}",
+  "between the {} and the {} there is a {}",
+  "keep the {} dry and the {} covered"
+];
+
+/* ---- in-script upgrades. Names are written IN THE SCRIPT.
+   The player sees the cost, never the effect, until the name is decoded
+   (by decoding the script, or by paying Analysis) - or buys blind at a discount. */
+var UPGRADES = [
+  { id: "quill", name: "wider quills", res: "corpus", base: 60, growth: 3.2, max: 999,
+    eff: "copy power x1.6", ap: function (E, n) { E.copyP = E.copyP.mul(D.of(1.6).pow(n)); } },
+  { id: "hand", name: "steady hand", res: "corpus", base: 140, growth: 3.4, max: 999,
+    eff: "count power x1.6", ap: function (E, n) { E.countP = E.countP.mul(D.of(1.6).pow(n)); } },
+  { id: "margin", name: "margin notes", res: "corpus", base: 420, growth: 3.6, max: 999,
+    eff: "cross-reference power x1.6", ap: function (E, n) { E.crossP = E.crossP.mul(D.of(1.6).pow(n)); } },
+  { id: "tally", name: "letter tally", res: "analysis", base: 40, growth: 4.0, max: 10,
+    eff: "decode thresholds /1.22", ap: function (E, n) { E.thrDiv *= Math.pow(1.22, n); } },
+  { id: "lamp", name: "night lamp", res: "corpus", base: 900, growth: 8, max: 4,
+    eff: "legibility multiplier gain +1", ap: function (E, n) { E.legGain += n; } },
+  { id: "desk", name: "shared desk", res: "corpus", base: 300, growth: 4.2, max: 12,
+    eff: "+1 scribe", ap: function (E, n) { E.freeScribes += n; } },
+  { id: "ink", name: "clean ink", res: "corpus", base: 2500, growth: 9, max: 6,
+    eff: "scribe base cost x0.9", ap: function (E, n) { E.scribeCost = E.scribeCost.mul(D.of(0.9).pow(n)); } },
+  { id: "hatch", name: "cross hatching", res: "context", base: 20, growth: 5.5, max: 5,
+    eff: "context weight +0.14", ap: function (E, n) { E.ctxW += 0.14 * n; } },
+  { id: "aloud", name: "reading aloud", res: "analysis", base: 200, growth: 4.5, max: 12,
+    eff: "occurrences x1.28", ap: function (E, n) { E.occK *= Math.pow(1.28, n); } },
+  { id: "ledger", name: "guess ledger", res: "analysis", base: 120, growth: 6, max: 5,
+    eff: "guess cost x0.72", ap: function (E, n) { E.guessMul *= Math.pow(0.72, n); } },
+  { id: "trust", name: "blind trust", res: "corpus", base: 5000, growth: 12, max: 4,
+    eff: "blind-buy discount +0.05", ap: function (E, n) { E.blind += 0.05 * n; } },
+  { id: "folio", name: "spare folio", res: "corpus", base: 8000, growth: 14, max: 6,
+    eff: "offline cap +1h", ap: function (E, n) { E.offCap += 3600 * n; } }
+];
+
+/* ---- LEXICON: permanent, individually toggleable. Never reset by Transcribe. ---- */
+var LEX = [
+  { id: "freq", name: "frequency tables", cost: 2, req: [],
+    eff: "decode thresholds /1.55", ap: function (E) { E.thrDiv *= 1.55; } },
+  { id: "bigram", name: "bigram analysis", cost: 12, req: ["freq"],
+    eff: "decode thresholds /1.45", ap: function (E) { E.thrDiv *= 1.45; } },
+  { id: "crib", name: "crib-dragging", cost: 40, req: ["freq"],
+    eff: "guess cost x0.4, extra glyph statistic", ap: function (E) { E.guessMul *= 0.4; E.crib = 1; } },
+  { id: "hands", name: "extra scribes", cost: 90, req: [],
+    eff: "+6 scribes", ap: function (E) { E.freeScribes += 6; } },
+  { id: "fast", name: "faster copying", cost: 260, req: ["hands"],
+    eff: "copy power x3", ap: function (E) { E.copyP = E.copyP.mulN(3); } },
+  { id: "ctx", name: "deep context", cost: 700, req: ["bigram"],
+    eff: "cross-reference power x3", ap: function (E) { E.crossP = E.crossP.mulN(3); } },
+  { id: "auto", name: "auto-guess", cost: 1800, req: ["crib"],
+    eff: "guesses the strongest glyph automatically", ap: function (E) { E.autoGuess = 1; } },
+  { id: "off", name: "offline efficiency", cost: 4200, req: [],
+    eff: "offline efficiency 90%, cap +6h", ap: function (E) { E.offEff = 0.9; E.offCap += 6 * 3600; } },
+  { id: "atr", name: "auto-transcribe", cost: 12000, req: ["auto"],
+    eff: "transcribes at full legibility", ap: function (E) { E.autoTr = 1; } },
+  { id: "asym", name: "asymptotic reading", cost: 45000, req: ["atr"], canon: 1,
+    eff: "thresholds approach a floor as canon grows", ap: function (E) { E.asym = 1; } },
+  { id: "apub", name: "auto-publish", cost: 260000, req: ["asym"], canon: 3,
+    eff: "publishes when able", ap: function (E) { E.autoPub = 1; } }
+];
+
+/* ---- CANON abilities. R9: every option is a pure gain on a distinct axis,
+   so an automation node choosing one at random can never sabotage a run. ---- */
+var CANON_ABIL = [
+  { id: "cadence", name: "steady cadence", eff: "copy power x2 per stack",
+    ap: function (E, n) { E.copyP = E.copyP.mul(D.of(2).pow(n)); } },
+  { id: "frame", name: "counting frame", eff: "count power x2 per stack",
+    ap: function (E, n) { E.countP = E.countP.mul(D.of(2).pow(n)); } },
+  { id: "margins", name: "wide margins", eff: "cross power x2 per stack",
+    ap: function (E, n) { E.crossP = E.crossP.mul(D.of(2).pow(n)); } },
+  { id: "eye", name: "keen eye", eff: "thresholds /1.3 per stack",
+    ap: function (E, n) { E.thrDiv *= Math.pow(1.3, n); } },
+  { id: "memory", name: "long memory", eff: "offline cap +4h per stack",
+    ap: function (E, n) { E.offCap += 4 * 3600 * n; } },
+  { id: "manyhands", name: "many hands", eff: "+3 scribes per stack",
+    ap: function (E, n) { E.freeScribes += 3 * n; } },
+  { id: "glass", name: "clear glass", eff: "legibility gain +2 per stack",
+    ap: function (E, n) { E.legGain += 2 * n; } },
+  { id: "patient", name: "patient scholar", eff: "context weight +0.2 per stack",
+    ap: function (E, n) { E.ctxW += 0.2 * n; } }
+];
+
+/* ---- CANON passages: authored fragments, granted one per Publish.
+   After these are exhausted, scripts and scaling continue procedurally forever. ---- */
+var CANON_TEXT = [
+  "The first archive was not built to keep books. It was built to keep the habit of copying them.",
+  "We were told the language was dead. Nothing that keeps changing its mind is dead.",
+  "A scribe who understands a page copies it faster. This is the only wage the work pays.",
+  "The founder left no name, only a mark: two strokes and a dot, meaning approximately here.",
+  "Ninety seconds after we could read the numbers, we stopped trusting the ones we had guessed.",
+  "There are three hundred rooms and one window. The window is not for looking out.",
+  "The corpus is not a text. It is the shape of every text that was ever thrown away.",
+  "In the second year the ink began to fade in a pattern, and the pattern was also a language.",
+  "Count the marks. Count them again. The second count is the one you report.",
+  "A null is a mark that means nothing. Every archive eventually invents them to hide in.",
+  "The homophone was a courtesy: two ways to say the same letter, so no line looked the same twice.",
+  "We learned to read the ligature before we learned what it joined.",
+  "The initial form of a letter is a promise about the word that follows it.",
+  "The old readers worked without tables. We keep their errors as a kind of calendar.",
+  "Legibility is not knowledge. It is the speed at which knowledge stops costing anything.",
+  "The gate was open the entire time. The lock was on the index.",
+  "Someone wrote in the margin: I am not sure this is a language. Then they kept copying.",
+  "Every script we finish is replaced by a harder one. This was described to us as a promotion.",
+  "The lexicon is a machine made of habits. Switch one off and the whole hand changes.",
+  "We published the first passage and the room went quiet, because it was about us.",
+  "There is a floor under the difficulty. We can approach it. We are told we cannot stand on it.",
+  "The river below the archive carries paper. Nobody upstream admits to sending it.",
+  "A guess costs analysis. A wrong guess costs the same, plus twenty seconds of doubt.",
+  "The tower has no top. It has a place where the stairs begin to repeat.",
+  "The word for reading and the word for waiting share a root.",
+  "We found a table of frequencies older than the script it describes.",
+  "Two scribes copying the same line will not produce the same line. Keep both.",
+  "The archive's only rule: never destroy a variant.",
+  "What we call a cipher, the writers called ordinary handwriting.",
+  "In the fourth script the letters began to lean toward the left margin, as if listening.",
+  "A passage is published when enough people can read it to argue about it.",
+  "The dust on the high shelves is uniform. Nothing up there was ever urgent.",
+  "The keen eye is not a talent. It is a table you have memorised and stopped crediting.",
+  "We asked the machine to guess for us. It was right often enough to be worrying.",
+  "The offline hours are honest work. The scribes do not require an audience.",
+  "There was a war. The archive recorded it as a change in paper quality.",
+  "The deepest passage is a list of names with the letters removed one by one.",
+  "Nobody decided the script should get harder. It simply had more to hide each year.",
+  "We have a word for a mark whose meaning was agreed and then forgotten. We use it often.",
+  "The bridge is a sentence: two banks and a verb between them.",
+  "A reader who never guesses will still arrive. Later, and with better notes.",
+  "The published passages are kept in a separate hall, because they no longer need us.",
+  "The last founder wrote: the point was never the message. The point was the practice of decoding.",
+  "There is a room where every wrong guess is filed. It is the largest room.",
+  "A script is finished the moment it stops surprising you. Then it is only work.",
+  "The stars were used for numbers before they were used for navigation.",
+  "We measure our progress in how much of our own bookkeeping we can read.",
+  "The final shelf is empty and labelled. The label is legible.",
+  "After the fiftieth passage the archive continues without narration. It always did.",
+  "You are reading this in a language you built out of counting. That was the whole method."
+];
+
+/* ---- TIPS: just-in-time, one line each, fired the moment the mechanic is live ---- */
+var TIPS = [
+  { id: "t_read", head: "you cannot read your own numbers",
+    when: function () { return legibility() < 0.99; },
+    text: "every number and label is written in the script. decode the ten digit-glyphs first - that is the fastest win in the game." },
+  { id: "t_alloc", head: "allocate scribes",
+    when: function () { return unassigned() > 0; },
+    text: "scribes are a pool, not a purchase. COPY makes corpus, COUNT makes analysis, CROSS-REFERENCE makes context. move them freely, always." },
+  { id: "t_buy", head: "first purchase",
+    when: function () { return S.scribes.n < 6 && S.corpus.gte(scribeCost(1)); },
+    text: "you can afford another scribe. more scribes means more of everything, on a steepening cost curve." },
+  { id: "t_guess", head: "guessing",
+    when: function () { return S.analysis.gte(D.of(guessCost())) && countResolvedLetters() < 4; },
+    text: "pick a glyph row, read its statistics, and spend analysis on a guess. correct resolves it instantly; wrong only slows that one glyph briefly." },
+  { id: "t_digits", head: "digits resolved",
+    when: function () { return digitsDone() && legibility() < 0.55; },
+    text: "the numbers are yours again. letters are next - and letter knowledge is partial, so half-decoded words read like a crossword." },
+  { id: "t_blind", head: "blind buying",
+    when: function () { return S.corpus.gte(upgCost(UPGRADES[0], 0).mulN(0.6)) && Object.keys(S.upgDec).length === 0; },
+    text: "an upgrade shows its cost, never its effect. decode its name with analysis and buy informed, or buy BLIND for " + Math.round(K.BLIND_DISC * 100) + "% off." },
+  { id: "t_tr", head: "transcribe",
+    when: function () { return legibility() >= 0.999; },
+    text: "the script is fully legible. transcribing resets this script and its resources, grants lexicon, and generates a new harder script." },
+  { id: "t_lex", head: "lexicon",
+    when: function () { return S.lex.gte(D.of(LEX[0].cost)) && !S.lexOwn.freq; },
+    text: "lexicon is permanent and survives transcribing. each node is a switch, so the late game is configuring a machine rather than buying a number." },
+  { id: "t_auto", head: "automation",
+    when: function () { return !!S.lexOwn.auto || !!S.lexOwn.atr; },
+    text: "automation nodes are toggles. turn them off whenever you want the decisions back." },
+  { id: "t_pub", head: "publish",
+    when: function () { return S.lifeLex.gte(pubReq()); },
+    text: "publishing resets lexicon and its tree, and grants a canon passage plus one permanent named ability. every ability is a pure gain." },
+  { id: "t_asym", head: "the asymptotic node",
+    when: function () { return !!S.lexOwn.asym; },
+    text: "thresholds now approach a floor as canon grows, and never reach it. this is the tail: it gets easier forever without ever finishing." }
+];
+
+/* ============================================================================
+   4. STATE - shape, defaults, serialisation, migration guard
+   ========================================================================== */
+var SAVE_KEY = "cipher.save.v1";
+var SAVE_VER = 1;
+var S = null;
+var SCRIPT = null;
+
+function defaults() {
+  return {
+    v: SAVE_VER,
+    t: 0,                        // played seconds
+    real: 0,                     // wall clock of last save (ms)
+    seed: 1,
+    tier: 1,
+    baseTier: 1,                 // raised by Publish
+    corpus: D.ZERO(), analysis: D.ZERO(), context: D.ZERO(),
+    lifeCorpus: D.ZERO(),        // this script only - drives lexicon gain
+    totalCorpus: D.ZERO(),
+    scribes: { n: K.START_SCRIBES, copy: K.START_SCRIBES, count: 0, cross: 0 },
+    bought: 0,                   // scribes bought (cost curve position)
+    upg: {}, upgDec: {},
+    lex: D.ZERO(), lifeLex: D.ZERO(), lexOwn: {}, lexOn: {},
+    canon: [], abil: {},
+    conf: [], res: [], pen: [],
+    log: [], sel: -1,
+    tips: { seen: {}, cur: null },
+    trCount: 0, pubCount: 0,
+    marks: {}                    // pacing instrumentation
+  };
+}
+
+/* build (or rebuild) the script + per-glyph knowledge arrays */
+function newScript(seed, tier) {
+  S.seed = seed; S.tier = tier;
+  SCRIPT = makeScript(seed, tier);
+  S.conf = []; S.res = []; S.pen = [];
+  for (var i = 0; i < SCRIPT.count; i++) { S.conf.push(0); S.res.push(0); S.pen.push(0); }
+  S.sel = -1;
+  ENC_CACHE = {};
+}
+
+function freshGame(seed) {
+  S = defaults();
+  newScript(seed || (1 + Math.floor(Math.random() * 1e9)), 1);
+  logAdd("the archive opens a new hand and hands you a page you cannot read", 0);
+  logAdd("first job: learn the ten digits", 1);
+}
+
+/* ---- serialisation ---- */
+function ser() {
+  return {
+    v: SAVE_VER, t: S.t, real: Date.now(), seed: S.seed, tier: S.tier, baseTier: S.baseTier,
+    corpus: S.corpus.ser(), analysis: S.analysis.ser(), context: S.context.ser(),
+    lifeCorpus: S.lifeCorpus.ser(), totalCorpus: S.totalCorpus.ser(),
+    scribes: S.scribes, bought: S.bought, upg: S.upg, upgDec: S.upgDec,
+    lex: S.lex.ser(), lifeLex: S.lifeLex.ser(), lexOwn: S.lexOwn, lexOn: S.lexOn,
+    canon: S.canon, abil: S.abil,
+    conf: S.conf.map(function (c) { return Math.round(c * 1e4) / 1e4; }),
+    res: S.res.join(""),
+    log: S.log.slice(-K.LOG_MAX),
+    tips: S.tips, trCount: S.trCount, pubCount: S.pubCount, marks: S.marks
+  };
+}
+function deser(o) {
+  if (!o || o.v !== SAVE_VER) return false;              // migration guard: refuse foreign saves
+  var d = defaults(), i;
+  S = d;
+  S.t = +o.t || 0; S.real = +o.real || 0;
+  S.seed = +o.seed || 1; S.tier = +o.tier || 1; S.baseTier = +o.baseTier || 1;
+  S.corpus = D.de(o.corpus); S.analysis = D.de(o.analysis); S.context = D.de(o.context);
+  S.lifeCorpus = D.de(o.lifeCorpus); S.totalCorpus = D.de(o.totalCorpus);
+  S.lex = D.de(o.lex); S.lifeLex = D.de(o.lifeLex);
+  if (o.scribes) {
+    S.scribes.n = Math.max(1, Math.floor(+o.scribes.n || 1));
+    S.scribes.copy = Math.max(0, Math.floor(+o.scribes.copy || 0));
+    S.scribes.count = Math.max(0, Math.floor(+o.scribes.count || 0));
+    S.scribes.cross = Math.max(0, Math.floor(+o.scribes.cross || 0));
+  }
+  S.bought = Math.max(0, Math.floor(+o.bought || 0));
+  /* unknown ids are dropped defensively, never crash */
+  S.upg = pickIds(o.upg, UPGRADES);
+  S.upgDec = pickIds(o.upgDec, UPGRADES);
+  S.lexOwn = pickIds(o.lexOwn, LEX);
+  S.lexOn = pickIds(o.lexOn, LEX);
+  S.abil = pickIds(o.abil, CANON_ABIL);
+  S.canon = (Array.isArray(o.canon) ? o.canon : []).filter(function (x) { return typeof x === "number" && x >= 0; });
+  S.trCount = +o.trCount || 0; S.pubCount = +o.pubCount || 0;
+  S.marks = o.marks && typeof o.marks === "object" ? o.marks : {};
+  if (o.tips && typeof o.tips === "object") {
+    S.tips.seen = o.tips.seen && typeof o.tips.seen === "object" ? o.tips.seen : {};
+    S.tips.cur = typeof o.tips.cur === "string" ? o.tips.cur : null;
+  }
+  S.log = Array.isArray(o.log) ? o.log.filter(function (e) { return e && typeof e.s === "string"; }).slice(-K.LOG_MAX) : [];
+  newScript(S.seed, S.tier);
+  var res = typeof o.res === "string" ? o.res : "";
+  for (i = 0; i < SCRIPT.count; i++) {
+    S.conf[i] = Array.isArray(o.conf) && isFinite(+o.conf[i]) ? Math.max(0, +o.conf[i]) : 0;
+    S.res[i] = res[i] === "1" ? 1 : 0;
+    if (S.res[i]) S.conf[i] = Math.max(1, S.conf[i]);
+  }
+  return true;
+}
+function pickIds(src, table) {
+  var out = {}, i, id;
+  if (!src || typeof src !== "object") return out;
+  for (i = 0; i < table.length; i++) {
+    id = table[i].id;
+    if (src[id] !== undefined && src[id] !== 0 && src[id] !== false) {
+      out[id] = typeof src[id] === "number" ? Math.max(0, Math.floor(src[id])) : true;
+    }
+  }
+  return out;
+}
+
+/* ---- log: internal strings only. Rendered through the legibility renderer
+   on every knowledge change, so scrolling back an hour becomes readable. ---- */
+function logAdd(text, dim) {
+  S.log.push({ t: Math.floor(S.t), s: text, d: dim ? 1 : 0 });
+  if (S.log.length > K.LOG_MAX) S.log.splice(0, S.log.length - K.LOG_MAX);
+  LOG_DIRTY = true;
+}
+var LOG_DIRTY = true;
+
+/* ============================================================================
+   5. GLYPHS - seeded shape generation on a 4x4 lattice + SVG cache
+   Glyphs are drawn, never typed: no font can be relied on, and every
+   Transcribe must produce a visually new alphabet.
+   ========================================================================== */
+function rng32(seed) {
+  var a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    var t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hash2(a, b) {
+  var h = (a >>> 0) ^ Math.imul(b + 0x9E3779B9 >>> 0, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13), 0xC2B2AE35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/* one stroke = line | quad-arc | dot on lattice 0..3 */
+function strokeKey(s) {
+  if (s.t === "d") return "d" + s.x1 + s.y1;
+  var a = s.x1 + "" + s.y1, b = s.x2 + "" + s.y2;
+  return (a < b ? a + b : b + a) + (s.t === "q" ? "q" : "");
+}
+function shapeKey(sh) {
+  return sh.map(strokeKey).sort().join("|");
+}
+function makeShape(seed, idx) {
+  var r = rng32(hash2(seed, idx * 2654435761));
+  var n = 2 + Math.floor(r() * 3);                      // 2-4 strokes
+  var sh = [], px = Math.floor(r() * 4), py = Math.floor(r() * 4), i, guard;
+  for (i = 0; i < n; i++) {
+    var x1 = px, y1 = py, x2, y2;
+    guard = 0;
+    do { x2 = Math.floor(r() * 4); y2 = Math.floor(r() * 4); } while (x2 === x1 && y2 === y1 && guard++ < 20);
+    if (x2 === x1 && y2 === y1) x2 = (x1 + 1) % 4;
+    var t = (i === n - 1 && r() < 0.3) ? "q" : "l";
+    var st = { t: t, x1: x1, y1: y1, x2: x2, y2: y2 };
+    if (t === "q") {
+      st.cx = Math.max(0, Math.min(3, (x1 + x2) / 2 + (r() < 0.5 ? -1.4 : 1.4)));
+      st.cy = Math.max(0, Math.min(3, (y1 + y2) / 2 + (r() < 0.5 ? -1.4 : 1.4)));
+    }
+    sh.push(st);
+    if (r() < 0.62) { px = x2; py = y2; } else { px = Math.floor(r() * 4); py = Math.floor(r() * 4); }
+  }
+  if (r() < 0.28) sh.push({ t: "d", x1: Math.floor(r() * 4), y1: Math.floor(r() * 4) });
+  return sh;
+}
+/* a usable glyph fills the lattice: it must span at least 2 units and carry
+   enough ink to read at 13px. Cramped corner shapes are rejected. */
+function shapeOk(sh) {
+  var xs = [], ys = [], len = 0, i, s, lines = 0;
+  for (i = 0; i < sh.length; i++) {
+    s = sh[i];
+    xs.push(s.x1); ys.push(s.y1);
+    if (s.t !== "d") {
+      xs.push(s.x2); ys.push(s.y2);
+      len += Math.abs(s.x2 - s.x1) + Math.abs(s.y2 - s.y1);
+      lines++;
+    }
+  }
+  if (lines < 2) return false;
+  var w = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+  var h = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+  return Math.max(w, h) >= 2 && w + h >= 3 && len >= 3;
+}
+
+/* too similar = identical stroke set, or one set contained in the other */
+function tooSimilar(a, b) {
+  var ka = a.map(strokeKey), kb = b.map(strokeKey), i, shared = 0;
+  var setb = {}; for (i = 0; i < kb.length; i++) setb[kb[i]] = 1;
+  for (i = 0; i < ka.length; i++) if (setb[ka[i]]) shared++;
+  return shared >= Math.min(ka.length, kb.length);
+}
+function buildAlphabet(seed, count) {
+  var shapes = [], keys = {}, i, salt, sh, ok, j, guard;
+  for (i = 0; i < count; i++) {
+    guard = 0; salt = i;
+    for (;;) {
+      sh = makeShape(seed, salt);
+      ok = shapeOk(sh) && !keys[shapeKey(sh)];
+      if (ok) for (j = 0; j < shapes.length; j++) if (tooSimilar(sh, shapes[j])) { ok = false; break; }
+      if (ok || guard++ > 400) break;
+      salt += 7919 * (guard + 1);
+    }
+    keys[shapeKey(sh)] = 1;
+    shapes.push(sh);
+  }
+  return shapes;
+}
+var SVG_CACHE = {};
+function glyphSVG(gid) {
+  var key = SCRIPT.seed + ":" + gid;
+  if (SVG_CACHE[key]) return SVG_CACHE[key];
+  var sh = SCRIPT.shapes[gid] || [], d = "", i, s;
+  for (i = 0; i < sh.length; i++) {
+    s = sh[i];
+    if (s.t === "d") d += "M" + s.x1 + " " + s.y1 + "l.01 0 ";
+    else if (s.t === "q") d += "M" + s.x1 + " " + s.y1 + "Q" + r2(s.cx) + " " + r2(s.cy) + " " + s.x2 + " " + s.y2 + " ";
+    else d += "M" + s.x1 + " " + s.y1 + "L" + s.x2 + " " + s.y2 + " ";
+  }
+  var svg = '<svg class="g" viewBox="-.6 -.6 4.2 4.2" aria-hidden="true"><path d="' + d.trim() + '"/></svg>';
+  SVG_CACHE[key] = svg;
+  return svg;
+}
+function r2(x) { return Math.round(x * 100) / 100; }
+
+/* ============================================================================
+   6. CIPHER - script generation, encoding, corpus generation, and the
+   LEGIBILITY RENDERER (everything user-facing goes through renderText).
+   ========================================================================== */
+var LIG_FREQ = { th: .033, ing: .011, er: .021 };
+
+/* honest per-letter statistics, measured from the embedded word list */
+var LSTAT = (function () {
+  var st = {}, i, j, w, c;
+  for (i = 0; i < ALPHA.length; i++) st[ALPHA[i]] = { n: 0, ini: 0, fin: 0, dbl: 0 };
+  for (i = 0; i < WORDS.length; i++) {
+    w = WORDS[i];
+    for (j = 0; j < w.length; j++) {
+      c = w[j]; if (!st[c]) continue;
+      st[c].n++;
+      if (j === 0) st[c].ini++;
+      if (j === w.length - 1) st[c].fin++;
+      if (j > 0 && w[j - 1] === c) st[c].dbl++;
+    }
+  }
+  return st;
+})();
+
+function strHash(s) {
+  var h = 2166136261, i;
+  for (i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+function makeScript(seed, tier) {
+  var t = Math.max(1, Math.min(TIERS.length, tier));
+  var feats = {}, f = TIERS[t - 1].feat, i, j;
+  for (i = 0; i < f.length; i++) feats[f[i]] = 1;
+
+  var mean = [];
+  for (i = 0; i < ALPHA.length; i++) mean.push({ t: "L", v: ALPHA[i] });
+  for (i = 0; i < DIGITS.length; i++) mean.push({ t: "N", v: DIGITS[i] });
+  if (feats.homo) for (i = 0; i < HOMO_LETTERS.length; i++) mean.push({ t: "L", v: HOMO_LETTERS[i], alt: 1 });
+  if (feats["null"]) for (i = 0; i < NULL_COUNT; i++) mean.push({ t: "0", v: "" });
+  if (feats.lig) for (i = 0; i < LIGS.length; i++) mean.push({ t: "G", v: LIGS[i] });
+  if (feats.init) for (i = 0; i < INIT_LETTERS.length; i++) mean.push({ t: "I", v: INIT_LETTERS[i] });
+
+  /* shuffle meanings onto glyph ids */
+  var r = rng32(hash2(seed, 0x5bf03635)), order = [];
+  for (i = 0; i < mean.length; i++) order.push(i);
+  for (i = order.length - 1; i > 0; i--) { j = Math.floor(r() * (i + 1)); var tmp = order[i]; order[i] = order[j]; order[j] = tmp; }
+
+  var sc = {
+    seed: seed, tier: tier, feats: feats, count: mean.length,
+    meaning: [], letterGlyph: {}, digitGlyph: {}, ligGlyph: {}, initGlyph: {},
+    nulls: [], freq: [], stat: [], shapes: buildAlphabet(seed, mean.length),
+    tierName: TIERS[t - 1].name
+  };
+  for (i = 0; i < order.length; i++) sc.meaning[order[i]] = mean[i];
+
+  for (i = 0; i < sc.count; i++) {
+    var m = sc.meaning[i];
+    if (m.t === "L") { (sc.letterGlyph[m.v] = sc.letterGlyph[m.v] || []).push(i); }
+    else if (m.t === "N") sc.digitGlyph[m.v] = i;
+    else if (m.t === "G") sc.ligGlyph[m.v] = i;
+    else if (m.t === "I") sc.initGlyph[m.v] = i;
+    else sc.nulls.push(i);
+  }
+  /* per-glyph frequency (drives occurrence counts) and honest display stats.
+     A per-script jitter models THIS corpus differing from the global letter
+     table. Without it, ranking observed frequency would be a perfect oracle
+     and a sharp player could solve any script for free. With it, the extremes
+     are guessable and the middle of the distribution is genuinely ambiguous. */
+  var jr = rng32(hash2(seed, 0x77aa3311));
+  for (i = 0; i < sc.count; i++) {
+    var mm = sc.meaning[i], fr = 0, stt = { ini: 0, fin: 0, dbl: 0 };
+    var jit = 0.62 + 0.76 * jr(), js = 0.85 + 0.3 * jr();
+    if (mm.t === "L") {
+      var share = 1 / sc.letterGlyph[mm.v].length;
+      fr = LFREQ[mm.v] * share;
+      if (sc.initGlyph[mm.v] !== undefined) fr *= 0.72;
+      var ls = LSTAT[mm.v];
+      stt = { ini: ls.n ? ls.ini / ls.n : 0, fin: ls.n ? ls.fin / ls.n : 0, dbl: ls.n ? ls.dbl / ls.n : 0 };
+      if (sc.initGlyph[mm.v] !== undefined) stt.ini = 0;
+    } else if (mm.t === "I") {
+      fr = LFREQ[mm.v] * 0.28; stt = { ini: 1, fin: 0, dbl: 0 };
+    } else if (mm.t === "N") {
+      fr = DIGIT_FREQ; stt = { ini: .1, fin: .1, dbl: .02 };
+    } else if (mm.t === "G") {
+      fr = LIG_FREQ[mm.v] || .01;
+      stt = { ini: mm.v === "th" ? .55 : .02, fin: mm.v === "ing" ? .8 : .1, dbl: 0 };
+    } else {
+      fr = K.NULL_RATE * 0.35; stt = { ini: .2, fin: .2, dbl: .05 };
+    }
+    sc.freq[i] = fr * jit;
+    sc.stat[i] = { ini: Math.min(1, stt.ini * js), fin: Math.min(1, stt.fin * js), dbl: Math.min(1, stt.dbl * js) };
+  }
+  return sc;
+}
+
+/* ---- encoding: deterministic per (seed, text), cached ---- */
+var ENC_CACHE = {};
+function encode(text) {
+  var key = text;
+  if (ENC_CACHE[key]) return ENC_CACHE[key];
+  var r = rng32(hash2(SCRIPT.seed, strHash(text)));
+  var low = text.toLowerCase(), out = [], i = 0, wordStart = true, c, g, k, lg, arr;
+  while (i < low.length) {
+    c = low[i];
+    if (c >= "a" && c <= "z") {
+      lg = null;
+      if (SCRIPT.feats.lig) {
+        for (k = 0; k < LIGS.length; k++) if (low.substr(i, LIGS[k].length) === LIGS[k]) { lg = LIGS[k]; break; }
+      }
+      if (lg) { out.push(SCRIPT.ligGlyph[lg]); i += lg.length; }
+      else {
+        if (wordStart && SCRIPT.feats.init && SCRIPT.initGlyph[c] !== undefined) g = SCRIPT.initGlyph[c];
+        else { arr = SCRIPT.letterGlyph[c]; g = arr.length > 1 ? arr[Math.floor(r() * arr.length)] : arr[0]; }
+        out.push(g); i++;
+      }
+      wordStart = false;
+      if (SCRIPT.feats["null"] && SCRIPT.nulls.length && r() < K.NULL_RATE) {
+        var nx = low[i];
+        if (nx >= "a" && nx <= "z") out.push(SCRIPT.nulls[Math.floor(r() * SCRIPT.nulls.length)]);
+      }
+    } else if (c >= "0" && c <= "9") {
+      out.push(SCRIPT.digitGlyph[c]); i++; wordStart = false;
+    } else {
+      out.push(text[i]);
+      wordStart = /\s/.test(c) || c === "\u2014" || c === "-";
+      i++;
+    }
+  }
+  ENC_CACHE[key] = out;
+  return out;
+}
+
+/* ---- THE LEGIBILITY RENDERER ----------------------------------------------
+   One function turns an internal string into display output at the player's
+   current knowledge level, per word:
+     no glyphs known  -> all glyphs as drawn shapes
+     some known       -> known letters Latin, unknown as shapes
+     all known        -> the plain word
+   The log stores internal strings and is re-rendered on every knowledge
+   change, so a player can scroll back an hour and suddenly read it.        */
+function renderText(text) {
+  var tok = encode(text), out = "", word = "", i, tk, m;
+  function flush() { if (word) { out += '<span class="w">' + word + "</span>"; word = ""; } }
+  for (i = 0; i < tok.length; i++) {
+    tk = tok[i];
+    if (typeof tk === "string") {
+      if (/\s/.test(tk)) { flush(); out += " "; }
+      else word += '<span class="dim">' + esc(tk) + "</span>";
+      continue;
+    }
+    if (S.res[tk]) {
+      m = SCRIPT.meaning[tk];
+      word += m.t === "0" ? "" : esc(m.v);
+    } else {
+      word += glyphSVG(tk);
+    }
+  }
+  flush();
+  return out;
+}
+/* plain (fully decoded) reading of an internal string - used by tests */
+function plainOf(text) {
+  var tok = encode(text), s = "", i, tk, m;
+  for (i = 0; i < tok.length; i++) {
+    tk = tok[i];
+    if (typeof tk === "string") { s += tk; continue; }
+    m = SCRIPT.meaning[tk];
+    if (m.t !== "0") s += m.v;
+  }
+  return s;
+}
+
+/* ---- filler corpus generation (the endless feed) ---- */
+function genLine(seed) {
+  var r = rng32(seed >>> 0);
+  var t = TEMPLATES[Math.floor(r() * TEMPLATES.length)];
+  return t.replace(/\{\}/g, function () { return WORDSET[Math.floor(r() * WORDSET.length)]; });
+}
+
+/* ============================================================================
+   7. EFFECTS - every multiplier in the game is derived here, in one place.
+   ========================================================================== */
+function baseEffects() {
+  return {
+    copyP: D.of(K.COPY_POWER), countP: D.of(K.COUNT_POWER), crossP: D.of(K.CROSS_POWER),
+    thrDiv: 1, legGain: K.LEG_GAIN, freeScribes: 0,
+    scribeCost: D.of(K.SCRIBE_BASE), ctxW: K.CTX_W, occK: K.OCCK,
+    guessMul: 1, blind: K.BLIND_DISC,
+    offCap: K.OFFLINE_CAP, offEff: K.OFFLINE_EFF,
+    autoGuess: 0, autoTr: 0, autoPub: 0, asym: 0, crib: 0
+  };
+}
+function effects() {
+  var E = baseEffects(), i, u, n, nd, ab;
+  for (i = 0; i < UPGRADES.length; i++) {
+    u = UPGRADES[i]; n = S.upg[u.id] || 0;
+    if (n > 0) u.ap(E, n);
+  }
+  for (i = 0; i < LEX.length; i++) {
+    nd = LEX[i];
+    if (S.lexOwn[nd.id] && S.lexOn[nd.id]) nd.ap(E);
+  }
+  for (i = 0; i < CANON_ABIL.length; i++) {
+    ab = CANON_ABIL[i]; n = S.abil[ab.id] || 0;
+    if (n > 0) ab.ap(E, n);
+  }
+  var L = legibility();
+  E.L = L;
+  E.legMult = 1 + E.legGain * L * L;                     // L<=1, so inherently bounded
+  E.total = K.START_SCRIBES + S.bought + E.freeScribes;
+  var lm = D.of(E.legMult);
+  E.copyRate = D.of(S.scribes.copy).mul(E.copyP).mul(lm);
+  E.analysisRate = D.of(S.scribes.count).mul(E.countP).mul(lm);
+  E.contextRate = D.of(S.scribes.cross).mul(E.crossP).mul(lm);
+  E.corpusLog = S.lifeCorpus.log10z();
+  /* analysis throughput enters as a log of the rate, so it never dominates (R7) */
+  E.anaTerm = 1 + K.AN_W * lg1p(E.analysisRate);
+  E.ctxTerm = 1 + E.ctxW * lg1p(S.context);
+  return E;
+}
+function lg1p(d) { var l = d.log10z(); return l > 0 ? l : (d.m === 0 ? 0 : Math.log10(1 + d.num())); }
+
+function legibility() {
+  if (!S || !S.res.length) return 0;
+  var n = 0, i;
+  for (i = 0; i < S.res.length; i++) if (S.res[i]) n++;
+  return n / S.res.length;
+}
+function countResolvedLetters() {
+  var n = 0, i;
+  for (i = 0; i < S.res.length; i++) if (S.res[i] && SCRIPT.meaning[i].t !== "N") n++;
+  return n;
+}
+function digitsDone() {
+  for (var d in SCRIPT.digitGlyph) if (!S.res[SCRIPT.digitGlyph[d]]) return false;
+  return true;
+}
+function unassigned() {
+  var E = LAST_E || effects();
+  return Math.max(0, E.total - S.scribes.copy - S.scribes.count - S.scribes.cross);
+}
+function clampAlloc(total) {
+  var s = S.scribes, sum = s.copy + s.count + s.cross;
+  while (sum > total) {
+    if (s.cross > 0) { s.cross--; } else if (s.count > 0) { s.count--; } else if (s.copy > 0) { s.copy--; } else break;
+    sum--;
+  }
+}
+
+/* per-glyph decode threshold: polynomial in tier, reduced by tooling,
+   and (with the asymptotic node) approaching a floor as canon grows. */
+function threshold(gid, E) {
+  var m = SCRIPT.meaning[gid], base;
+  if (m.t === "N") base = K.THR_DIGIT;
+  else if (m.t === "L" || m.t === "I") base = K.THR_LETTER;
+  else base = K.THR_EXTRA;
+  var rare = Math.pow(K.RARE_REF / Math.max(K.RARE_CLAMP, SCRIPT.freq[gid]), K.RARE_POW);
+  var thr = base * rare * Math.pow(S.tier, K.TIER_THR_POW) / E.thrDiv;
+  if (E.asym) {
+    /* R7: driven by log10 of a magnitude, never by the count of the resets it accelerates */
+    var floor = K.ASYMP_FLOOR * thr;
+    thr = floor + (thr - floor) / (1 + K.ASYMP_STEP * Math.log10(1 + S.canon.length));
+  }
+  return Math.max(1e-6, thr);
+}
+function occ(gid, E) { return E.occK * SCRIPT.freq[gid] * E.corpusLog; }
+function confRate(gid, E) {
+  if (S.res[gid]) return 0;
+  var r = K.DEC_BASE * Math.sqrt(1 + occ(gid, E)) * E.anaTerm * E.ctxTerm / threshold(gid, E);
+  /* a joined mark cannot be split apart without context; never zero (R10) */
+  if (SCRIPT.meaning[gid].t === "G") r *= 0.15 + 0.85 * Math.min(1, lg1p(S.context) / K.LIG_CTX);
+  if (S.pen[gid] > S.t) r *= K.PEN_MULT;
+  return r;
+}
+function scribeCost(k) {
+  var E = LAST_E || effects();
+  return geoSum(E.scribeCost, K.SCRIBE_GROWTH, S.bought, k);
+}
+function upgCost(u, lvl) { return D.of(u.base).mul(D.of(u.growth).pow(lvl)); }
+function guessCost() {
+  var E = LAST_E || effects();
+  return Math.max(1, K.GUESS_BASE * Math.pow(K.GUESS_TIER, S.tier - 1) * E.guessMul);
+}
+function nameCost() {
+  return Math.max(1, K.DECODE_NAME_BASE * Math.pow(K.DECODE_NAME_TIER, S.tier - 1));
+}
+function pubReq() { return D.log(K.PUB_BASE * Math.pow(1 + S.pubCount, K.PUB_POW)); }
+function lexGain() {
+  var g = K.LEX_LOG_K * S.lifeCorpus.log10z() + Math.log10(Math.pow(K.LEX_TIER, S.tier - 1)) - K.LEX_OFF;
+  var v = D.log(g).div(D.of(K.LEX_DIV_FLOOR));           // R6: divisor floored at 1
+  return v.lt(D.ONE()) ? D.ONE() : v;
+}
+var LAST_E = null;
+
+/* ============================================================================
+   8. SIMULATION - production, allocation, confidence, purchasing, tick
+   ========================================================================== */
+var FEED = "", FEED_T = 0;
+
+function step(dt) {
+  var E = effects(); LAST_E = E;
+  clampAlloc(E.total);
+
+  var cg = E.copyRate.mulN(dt);
+  S.corpus = S.corpus.add(cg);
+  S.lifeCorpus = S.lifeCorpus.add(cg);
+  S.totalCorpus = S.totalCorpus.add(cg);
+  S.analysis = S.analysis.add(E.analysisRate.mulN(dt));
+  S.context = S.context.add(E.contextRate.mulN(dt));
+
+  var i, n = S.res.length;
+  for (i = 0; i < n; i++) {
+    if (S.res[i]) continue;
+    S.conf[i] += confRate(i, E) * dt;
+    if (S.conf[i] >= 1) resolve(i, "study");
+  }
+  S.t += dt;
+  autos(dt, E);
+  mark(E);
+}
+
+function resolve(gid, how) {
+  if (S.res[gid]) return;
+  S.res[gid] = 1; S.conf[gid] = 1;
+  var m = SCRIPT.meaning[gid];
+  var what = m.t === "N" ? "a numeral" : m.t === "0" ? "an empty mark" : m.t === "G" ? "a joined mark" : "a letter";
+  var name = m.t === "0" ? "nothing at all" : m.v;
+  logAdd((how === "guess" ? "guessed right: " : "the count settles: ") + what + " reads " + name, 0);
+  LOG_DIRTY = true; STRUCT_DIRTY = true;
+}
+
+/* ---- allocation ---- */
+function assign(task, d) {
+  var E = LAST_E || effects();
+  if (d > 0) { if (unassigned() < d) d = unassigned(); if (d <= 0) return; S.scribes[task] += d; }
+  else { d = -d; if (S.scribes[task] < d) d = S.scribes[task]; S.scribes[task] -= d; }
+  STRUCT_DIRTY = true;
+}
+
+/* ---- scribes ---- */
+function buyScribes(k) {
+  var E = LAST_E || effects();
+  if (k === "max") k = maxBuy(E.scribeCost, K.SCRIBE_GROWTH, S.bought, S.corpus);
+  if (k <= 0) return 0;
+  var c = geoSum(E.scribeCost, K.SCRIBE_GROWTH, S.bought, k);
+  if (c.gt(S.corpus)) return 0;
+  S.corpus = S.corpus.sub(c);
+  S.bought += k;
+  S.scribes.copy += k;                                   // land in COPY; free to move
+  STRUCT_DIRTY = true;
+  return k;
+}
+
+/* ---- upgrades: cost is visible, effect is not ---- */
+function upgLevel(id) { return S.upg[id] || 0; }
+function resOf(name) { return name === "corpus" ? S.corpus : name === "analysis" ? S.analysis : S.context; }
+function payRes(name, amt) {
+  if (name === "corpus") S.corpus = S.corpus.sub(amt);
+  else if (name === "analysis") S.analysis = S.analysis.sub(amt);
+  else S.context = S.context.sub(amt);
+}
+function upgPrice(u, blind) {
+  var E = LAST_E || effects();
+  var c = upgCost(u, upgLevel(u.id));
+  if (blind && !S.upgDec[u.id]) c = c.mulN(1 - E.blind);
+  return c;
+}
+function buyUpg(id, blind) {
+  var u = byId(UPGRADES, id); if (!u) return false;
+  var lvl = upgLevel(id); if (lvl >= u.max) return false;
+  var c = upgPrice(u, blind);
+  if (resOf(u.res).lt(c)) return false;
+  payRes(u.res, c);
+  S.upg[id] = lvl + 1;
+  logAdd("bought " + u.name + (blind && !S.upgDec[id] ? " without reading the label" : ""), 1);
+  STRUCT_DIRTY = true;
+  return true;
+}
+function decodeName(id) {
+  var u = byId(UPGRADES, id); if (!u || S.upgDec[id]) return false;
+  var c = D.of(nameCost());
+  if (S.analysis.lt(c)) return false;
+  S.analysis = S.analysis.sub(c);
+  S.upgDec[id] = true;
+  logAdd("the label reads: " + u.name, 1);
+  STRUCT_DIRTY = true;
+  return true;
+}
+function byId(t, id) { for (var i = 0; i < t.length; i++) if (t[i].id === id) return t[i]; return null; }
+
+/* ---- guessing: honest statistics, a real cost, a gentle penalty ---- */
+function guessValue(gid) {
+  var m = SCRIPT.meaning[gid];
+  return m.t === "0" ? "-" : m.v;
+}
+function guess(gid, val) {
+  if (gid < 0 || gid >= S.res.length || S.res[gid]) return null;
+  var c = D.of(guessCost());
+  if (S.analysis.lt(c)) return null;
+  S.analysis = S.analysis.sub(c);
+  if (guessValue(gid) === val) { resolve(gid, "guess"); return true; }
+  S.pen[gid] = S.t + K.PEN_TIME;
+  logAdd("a misreading: that mark is not " + (val === "-" ? "empty" : val), 1);
+  STRUCT_DIRTY = true;
+  return false;
+}
+/* frequency-matching heuristic: rank observed glyphs against expected letters */
+function bestGuess() {
+  var un = [], i, m;
+  for (i = 0; i < S.res.length; i++) if (!S.res[i]) un.push(i);
+  if (!un.length) return null;
+  un.sort(function (a, b) { return SCRIPT.freq[b] - SCRIPT.freq[a]; });
+  var used = {};
+  for (i = 0; i < S.res.length; i++) if (S.res[i]) used[SCRIPT.meaning[i].t + SCRIPT.meaning[i].v] = 1;
+  var gid = un[0];
+  m = SCRIPT.meaning[gid];
+  /* candidate = the highest-frequency unclaimed value of the same class */
+  var pool = m.t === "N" ? DIGITS : m.t === "G" ? LIGS : m.t === "0" ? ["-"] : ALPHA;
+  var best = null, bf = -1, j, v;
+  for (j = 0; j < pool.length; j++) {
+    v = pool[j];
+    if (used[m.t + v]) continue;
+    var f = m.t === "N" ? 1 : m.t === "G" ? (LIG_FREQ[v] || .01) : m.t === "0" ? 1 : LFREQ[v];
+    if (f > bf) { bf = f; best = v; }
+  }
+  return best === null ? null : { gid: gid, val: best };
+}
+
+/* ---- automation ---- */
+var autoT = 0;
+function autos(dt, E) {
+  if (E.autoGuess) {
+    autoT += dt;
+    while (autoT >= K.AUTOGUESS_EVERY) {
+      autoT -= K.AUTOGUESS_EVERY;
+      if (S.analysis.gte(D.of(guessCost()).mulN(3))) {
+        var g = bestGuess(); if (g) guess(g.gid, g.val);
+      }
+    }
+  }
+  if (E.autoTr && legibility() >= 0.999) transcribe();
+  if (E.autoPub && S.lifeLex.gte(pubReq())) publish();
+}
+
+/* ---- pacing instrumentation ---- */
+function mark(E) {
+  var mk = S.marks;
+  if (!mk.digits && digitsDone()) mk.digits = S.t;
+  if (!mk.letter1 && countResolvedLetters() >= 1) mk.letter1 = S.t;
+  if (!mk.half && countResolvedLetters() >= 13) mk.half = S.t;
+}
+
+/* ---- offline catch-up ---- */
+function offlineApply(elapsed) {
+  var E = effects();
+  var cap = E.offCap, eff = E.offEff;
+  var used = Math.min(elapsed, cap);
+  if (used < 5) return null;
+  var t = 0, chunk = K.CHUNK;
+  var budget = used * eff;
+  while (t < budget) {
+    var d = Math.min(chunk, budget - t);
+    step(d); t += d;
+  }
+  return { away: elapsed, used: used, eff: eff, capped: elapsed > cap };
+}
+
+/* ---- R5 sub-critical check (exported for tests) ----------------------------
+   Cost of one more scribe:      log10(2.2)                = 0.34242 OOM
+   Best possible payback (n=1):  log10((1+1)/1) = log10(2) = 0.30103 OOM
+   0.34242 > 0.30103 for every n >= 1 and every upgrade combination, because
+   flat power multipliers do not change the MARGINAL ratio (n+1)/n. Therefore
+   no cycle in this game can grow without bound in finite time.              */
+function subCriticalCheck() {
+  var costOOM = Math.log10(K.SCRIBE_GROWTH), worst = 0, n, i, u, E, free = 0;
+  E = baseEffects();
+  for (i = 0; i < UPGRADES.length; i++) { u = UPGRADES[i]; u.ap(E, u.max); }
+  for (i = 0; i < LEX.length; i++) LEX[i].ap(E);
+  for (i = 0; i < CANON_ABIL.length; i++) CANON_ABIL[i].ap(E, 40);
+  free = E.freeScribes;
+  for (n = 1; n < 5000; n++) {
+    var gain = Math.log10((n + 1 + free + K.START_SCRIBES) / (n + free + K.START_SCRIBES));
+    if (gain > worst) worst = gain;
+  }
+  var gain0 = Math.log10((1 + 1) / 1);                    // absolute worst case, no free scribes
+  worst = Math.max(worst, gain0);
+  return { costOOM: costOOM, gainOOM: worst, ok: costOOM > worst };
+}
+
+/* repeatable-upgrade marginal check: cost growth must exceed the multiplier */
+function upgSubCritical() {
+  var out = [], i, u;
+  for (i = 0; i < UPGRADES.length; i++) {
+    u = UPGRADES[i];
+    if (u.max < 100) continue;                            // bounded upgrades cannot run away
+    var E0 = baseEffects(), E1 = baseEffects();
+    u.ap(E0, 10); u.ap(E1, 11);
+    var g = Math.max(
+      E1.copyP.log10() - E0.copyP.log10(),
+      E1.countP.log10() - E0.countP.log10(),
+      E1.crossP.log10() - E0.crossP.log10());
+    out.push({ id: u.id, cost: Math.log10(u.growth), gain: g, ok: Math.log10(u.growth) > g });
+  }
+  return out;
+}
+
+/* ============================================================================
+   9. PROGRESSION - transcribe / lexicon / publish / the asymptotic tail
+   ========================================================================== */
+function resetScript(tier) {
+  S.corpus = D.ZERO(); S.analysis = D.ZERO(); S.context = D.ZERO();
+  S.lifeCorpus = D.ZERO();
+  S.bought = 0;
+  S.upg = {}; S.upgDec = {};
+  S.scribes.copy = K.START_SCRIBES; S.scribes.count = 0; S.scribes.cross = 0;
+  newScript(hash2(S.seed, 0x1f2e3d4c ^ (S.trCount * 7919 + S.pubCount * 104729)), tier);
+  var E = effects();
+  S.scribes.copy = Math.max(1, E.total - 0);
+  S.scribes.count = 0; S.scribes.cross = 0;
+  clampAlloc(E.total);
+  SVG_CACHE = {};
+  STRUCT_DIRTY = true; LOG_DIRTY = true;
+}
+
+/* LAYER 1 - TRANSCRIBE: at full legibility, reset the script one tier higher */
+function canTranscribe() { return legibility() >= 0.999; }
+function transcribe() {
+  if (!canTranscribe()) return false;
+  var g = lexGain();
+  S.lex = S.lex.add(g); S.lifeLex = S.lifeLex.add(g);
+  S.trCount++;
+  if (!S.marks.tr1) S.marks.tr1 = S.t;
+  logAdd("transcribed the script and filed it; the lexicon grows by " + fmt(g), 0);
+  resetScript(S.tier + 1);
+  logAdd("a new hand, one tier harder: " + SCRIPT.tierName, 1);
+  return true;
+}
+
+/* LAYER 2 - LEXICON: permanent, individually switchable */
+function lexAvail(nd) {
+  var i;
+  for (i = 0; i < nd.req.length; i++) if (!S.lexOwn[nd.req[i]]) return false;
+  if (nd.canon && S.canon.length < nd.canon) return false;
+  return true;
+}
+function lexBuy(id) {
+  var nd = byId(LEX, id); if (!nd || S.lexOwn[id] || !lexAvail(nd)) return false;
+  var c = D.of(nd.cost);
+  if (S.lex.lt(c)) return false;
+  S.lex = S.lex.sub(c);
+  S.lexOwn[id] = true; S.lexOn[id] = true;
+  logAdd("added to the lexicon: " + nd.name, 0);
+  STRUCT_DIRTY = true;
+  return true;
+}
+function lexToggle(id) {
+  if (!S.lexOwn[id]) return;
+  S.lexOn[id] = !S.lexOn[id];
+  STRUCT_DIRTY = true;
+}
+
+/* LAYER 3 - PUBLISH: reset the lexicon for a canon passage + a permanent ability */
+function canPublish() { return S.lifeLex.gte(pubReq()); }
+function passageText(i) {
+  if (i < CANON_TEXT.length) return CANON_TEXT[i];
+  var r = rng32(hash2(0x2a3b4c5d, i));
+  var t = TEMPLATES[Math.floor(r() * TEMPLATES.length)].replace(/\{\}/g, function () {
+    return WORDSET[Math.floor(r() * WORDSET.length)];
+  });
+  return t.charAt(0).toUpperCase() + t.slice(1) + ".";
+}
+function publish() {
+  if (!canPublish()) return false;
+  var idx = S.canon.length;
+  var ab = CANON_ABIL[idx % CANON_ABIL.length];           // R9: every option is a pure gain
+  S.abil[ab.id] = (S.abil[ab.id] || 0) + 1;
+  S.canon.push(idx);
+  S.pubCount++;
+  S.lex = D.ZERO(); S.lifeLex = D.ZERO(); S.lexOwn = {}; S.lexOn = {};
+  S.baseTier++;
+  if (!S.marks.pub1) S.marks.pub1 = S.t;
+  logAdd("published a passage; the ability " + ab.name + " is yours for good", 0);
+  resetScript(S.baseTier);
+  return true;
+}
+
+/* hard reset */
+function hardReset() {
+  try { LS.removeItem(SAVE_KEY); } catch (e) {}
+  freshGame();
+  STRUCT_DIRTY = true; LOG_DIRTY = true;
+}
+
+/* ============================================================================
+   10. RENDER - DOM built once, updated by diff.
+   What is written in the script: resources, tasks, upgrade names, the log,
+   and every number. What stays in Latin: your own permanent knowledge
+   (lexicon, canon) and the game's chrome (panel titles, tutorial, tips).
+   ========================================================================== */
+var STRUCT_DIRTY = true;
+var R = {};                                   // element cache
+function $(id) { return document.getElementById(id); }
+function setT(el, s) { if (el && el.__t !== s) { el.__t = s; el.textContent = s; } }
+function setH(el, s) { if (el && el.__h !== s) { el.__h = s; el.innerHTML = s; } }
+function setW(el, p) { if (el && el.__w !== p) { el.__w = p; el.style.width = p.toFixed(1) + "%"; } }
+function cls(el, c, on) { if (el && el.__c !== !!on + c) { el.__c = !!on + c; el.classList[on ? "add" : "remove"](c); } }
+
+var RES_NAMES = { corpus: "corpus", analysis: "analysis", context: "context" };
+var TASK_NAMES = { copy: "copy", count: "count", cross: "cross reference" };
+
+function buildUI() {
+  $("c1").innerHTML =
+    '<div class="panel"><div class="ptitle">LEDGER<span class="r" id="lfeed"></span></div>' +
+    resRow("corpus") + resRow("analysis") + resRow("context") +
+    '<div class="dimmer" style="margin-top:6px;font-size:11px">incoming</div>' +
+    '<div class="txt" id="feed" style="color:var(--dim)"></div></div>' +
+
+    '<div class="panel"><div class="ptitle">SCRIBES<span class="r" id="sctot"></span></div>' +
+    '<div class="row"><span class="k">unassigned</span><span class="v" id="scun"></span></div>' +
+    allocRow("copy") + allocRow("count") + allocRow("cross") +
+    '<button class="b" data-a="buy1">one more scribe<span class="c" id="cs1"></span></button>' +
+    '<button class="b" data-a="buymax">as many as possible<span class="c" id="csm"></span></button>' +
+    '</div>';
+
+  $("c2").innerHTML =
+    '<div class="panel"><div class="ptitle">MARKS<span class="r" id="mkn"></span></div>' +
+    '<table class="gt"><thead><tr><th class="l">mark</th><th>seen</th><th>ini</th><th>fin</th>' +
+    '<th>dbl</th><th id="thx"></th><th>read</th></tr></thead><tbody id="gtb"></tbody></table>' +
+    '<div id="gpick"></div></div>' +
+    '<div class="panel"><div class="ptitle">READ<span class="r" id="rdn"></span></div>' +
+    '<div class="solved" id="solved"></div></div>';
+
+  $("c3").innerHTML =
+    '<div class="panel"><div class="ptitle">TECH<span class="r" id="upn"></span></div>' +
+    '<div id="upl"></div></div>' +
+    '<div class="panel"><div class="ptitle">TRANSCRIBE</div>' +
+    '<div class="row"><span class="k">legibility</span><span class="v" id="trleg"></span></div>' +
+    '<button class="b" data-a="tr">transcribe this script<span class="c" id="trc"></span></button></div>' +
+    '<div class="panel"><div class="ptitle">LEXICON<span class="r" id="lxn"></span></div>' +
+    '<div id="lxl"></div></div>' +
+    '<div class="panel"><div class="ptitle">CANON<span class="r" id="cnn"></span></div>' +
+    '<div class="row"><span class="k">lifetime lexicon</span><span class="v" id="pubv"></span></div>' +
+    '<div class="bar" id="pubb"><i></i></div>' +
+    '<button class="b" data-a="pub">publish<span class="c" id="pubc"></span></button>' +
+    '<div id="cnl" class="dimtxt" style="margin-top:5px;font-size:12px"></div></div>' +
+    '<div class="panel"><div class="ptitle">LOG</div><div class="log" id="log"></div></div>' +
+    '<div class="panel"><div class="ptitle">ARCHIVE<span class="r" id="arv"></span></div>' +
+    '<div class="two"><button class="b" data-a="exp">export</button><button class="b" data-a="dl">download</button></div>' +
+    '<textarea id="sav" spellcheck="false" placeholder="paste a save here"></textarea>' +
+    '<div class="two"><button class="b" data-a="imp">import</button><button class="b" data-a="reset">hard reset</button></div></div>';
+
+  R = {
+    feed: $("feed"), lfeed: $("lfeed"), scun: $("scun"), sctot: $("sctot"),
+    cs1: $("cs1"), csm: $("csm"), gtb: $("gtb"), gpick: $("gpick"), solved: $("solved"),
+    mkn: $("mkn"), rdn: $("rdn"), thx: $("thx"), upl: $("upl"), upn: $("upn"),
+    trleg: $("trleg"), trc: $("trc"), lxl: $("lxl"), lxn: $("lxn"),
+    pubv: $("pubv"), pubb: $("pubb").firstChild, pubc: $("pubc"), cnl: $("cnl"), cnn: $("cnn"),
+    log: $("log"), sav: $("sav"), arv: $("arv"),
+    hlegv: $("hlegv"), hbar: $("hbar").firstChild, hstat: $("hstat"), tip: $("tipline")
+  };
+  ["corpus", "analysis", "context"].forEach(function (r) {
+    R[r + "V"] = $("v_" + r); R[r + "R"] = $("r_" + r); R[r + "B"] = $("b_" + r).firstChild;
+    R[r + "N"] = $("n_" + r);
+  });
+  ["copy", "count", "cross"].forEach(function (t) {
+    R["a_" + t] = $("a_" + t); R["ar_" + t] = $("ar_" + t); R["an_" + t] = $("an_" + t);
+  });
+  wire();
+}
+function resRow(r) {
+  return '<div class="row"><span class="k" id="n_' + r + '"></span>' +
+    '<span class="v"><span id="v_' + r + '"></span> <span class="dimmer" id="r_' + r + '"></span></span></div>' +
+    '<div class="bar" id="b_' + r + '"><i></i></div>';
+}
+function allocRow(t) {
+  return '<div class="alloc"><span class="nm" id="an_' + t + '"></span>' +
+    '<button class="s" data-a="m" data-t="' + t + '">&minus;</button>' +
+    '<span class="ct" id="a_' + t + '"></span>' +
+    '<button class="s" data-a="p" data-t="' + t + '">+</button>' +
+    '<span class="rt" id="ar_' + t + '"></span></div>';
+}
+
+/* ---------------- dynamic lists (rebuilt only when structure changes) ------ */
+function rebuildGlyphs() {
+  var E = LAST_E, rows = "", i, m, un = [];
+  for (i = 0; i < S.res.length; i++) if (!S.res[i]) un.push(i);
+  un.sort(function (a, b) { return SCRIPT.freq[b] - SCRIPT.freq[a]; });
+  for (var j = 0; j < un.length; j++) {
+    i = un[j]; m = SCRIPT.meaning[i];
+    rows += '<tr data-a="sel" data-i="' + i + '" id="gr' + i + '">' +
+      '<td class="l">' + glyphSVG(i) + '</td>' +
+      '<td id="go' + i + '"></td>' +
+      '<td class="dimtxt">' + Math.round(SCRIPT.stat[i].ini * 100) + '</td>' +
+      '<td class="dimtxt">' + Math.round(SCRIPT.stat[i].fin * 100) + '</td>' +
+      '<td class="dimtxt">' + Math.round(SCRIPT.stat[i].dbl * 100) + '</td>' +
+      '<td class="dimtxt" id="gx' + i + '"></td>' +
+      '<td><span class="mini" id="gm' + i + '"><i></i></span></td></tr>';
+  }
+  setH(R.gtb, rows);
+  R.gRows = un;
+  setT(R.thx, (E && E.crib) ? "rank" : "");
+  rebuildPick();
+  var sv = "", k;
+  for (i = 0; i < S.res.length; i++) if (S.res[i]) {
+    m = SCRIPT.meaning[i];
+    sv += '<span class="w">' + glyphSVG(i) + '<b>' + (m.t === "0" ? "&middot;" : esc(m.v)) + "</b></span> ";
+  }
+  setH(R.solved, sv || '<span class="dimmer">nothing yet</span>');
+}
+function rebuildPick() {
+  if (S.sel < 0 || S.res[S.sel]) { setH(R.gpick, '<div class="dimmer" style="margin-top:5px">pick a mark to guess at it</div>'); return; }
+  var m = SCRIPT.meaning[S.sel], pool, i, h = "";
+  pool = ALPHA.concat(DIGITS).concat(LIGS).concat(["-"]);
+  for (i = 0; i < pool.length; i++) {
+    h += '<button data-a="g" data-v="' + pool[i] + '">' + (pool[i] === "-" ? "&middot;" : pool[i]) + "</button>";
+  }
+  setH(R.gpick, '<div class="dimmer" style="margin-top:6px">guess this mark &mdash; costs <span id="gc"></span> analysis</div>' +
+    '<div class="keys">' + h + "</div>");
+  R.gc = $("gc");
+}
+function rebuildUpg() {
+  var h = "", i, u, lvl;
+  for (i = 0; i < UPGRADES.length; i++) {
+    u = UPGRADES[i]; lvl = upgLevel(u.id);
+    if (lvl >= u.max) {
+      h += '<button class="b" disabled>' + renderText(u.name) + '<span class="c">done</span></button>';
+      continue;
+    }
+    h += '<button class="b" data-a="up" data-i="' + u.id + '" id="ub' + u.id + '">' +
+      renderText(u.name) + (lvl ? ' <span class="dimmer">' + numHTMLn(lvl) + "</span>" : "") +
+      '<span class="c" id="uc' + u.id + '"></span></button>';
+    if (S.upgDec[u.id]) h += '<div class="dimtxt" style="font-size:11px;margin:-2px 0 4px 6px">' + esc(u.eff) + "</div>";
+    else h += '<div class="two" style="margin-bottom:4px">' +
+      '<button class="b" data-a="dn" data-i="' + u.id + '" style="margin:0">read the label<span class="c" id="un' + u.id + '"></span></button>' +
+      '<button class="b" data-a="ub" data-i="' + u.id + '" style="margin:0">buy blind<span class="c" id="ud' + u.id + '"></span></button></div>';
+  }
+  setH(R.upl, h);
+}
+function rebuildLex() {
+  var h = "", i, nd;
+  for (i = 0; i < LEX.length; i++) {
+    nd = LEX[i];
+    if (!lexAvail(nd) && !S.lexOwn[nd.id]) {
+      h += '<button class="b" disabled>' + esc(nd.name) + '<span class="c">locked</span></button>';
+      continue;
+    }
+    if (S.lexOwn[nd.id]) {
+      h += '<button class="b on" data-a="lt" data-i="' + nd.id + '">' + esc(nd.name) +
+        '<span class="c">' + (S.lexOn[nd.id] ? '<span class="acc">on</span>' : "off") + "</span></button>" +
+        '<div class="dimmer" style="font-size:11px;margin:-2px 0 4px 6px">' + esc(nd.eff) + "</div>";
+    } else {
+      h += '<button class="b" data-a="lb" data-i="' + nd.id + '" id="lb' + nd.id + '">' + esc(nd.name) +
+        '<span class="c" id="lc' + nd.id + '">' + fmt(D.of(nd.cost)) + "</span></button>" +
+        '<div class="dimmer" style="font-size:11px;margin:-2px 0 4px 6px">' + esc(nd.eff) + "</div>";
+    }
+  }
+  setH(R.lxl, h);
+}
+function rebuildCanon() {
+  var h = "", i, n;
+  if (!S.canon.length) h = '<span class="dimmer">no passages yet</span>';
+  else {
+    for (i = Math.max(0, S.canon.length - 4); i < S.canon.length; i++)
+      h += '<div style="margin:4px 0">' + esc(passageText(S.canon[i])) + "</div>";
+    h += '<div class="dimmer" style="margin-top:6px">abilities: ';
+    var parts = [];
+    for (i = 0; i < CANON_ABIL.length; i++) {
+      n = S.abil[CANON_ABIL[i].id] || 0;
+      if (n) parts.push(esc(CANON_ABIL[i].name) + " x" + n);
+    }
+    h += parts.join(", ") + "</div>";
+  }
+  setH(R.cnl, h);
+}
+function rebuildLog() {
+  var h = "", i, e;
+  for (i = S.log.length - 1; i >= 0; i--) {
+    e = S.log[i];
+    h += '<div><span class="ts">' + numHTMLn(e.t) + "</span>" +
+      '<span class="' + (e.d ? "d" : "") + '">' + renderText(e.s) + "</span></div>";
+  }
+  setH(R.log, h);
+}
+
+/* ---------------- per-frame numeric update (10 Hz) ------------------------- */
+function updateUI() {
+  var E = LAST_E || effects();
+  if (STRUCT_DIRTY) {
+    rebuildGlyphs(); rebuildUpg(); rebuildLex(); rebuildCanon();
+    LOG_DIRTY = true; STRUCT_DIRTY = false;
+  }
+  if (LOG_DIRTY) { rebuildLog(); LOG_DIRTY = false; }
+
+  var L = E.L;
+  setT(R.hlegv, fmtPct(L));
+  setW(R.hbar, L * 100);
+  cls($("hbar"), "on", L >= 0.999);
+  setT(R.hstat, "script " + (S.trCount + 1) + " / tier " + S.tier + " / " + fmtTime(S.t));
+
+  /* ledger */
+  var nextS = scribeCost(1), gc = D.of(guessCost());
+  upRes("corpus", S.corpus, E.copyRate, nextS);
+  upRes("analysis", S.analysis, E.analysisRate, gc);
+  upRes("context", S.context, E.contextRate, D.of(20));
+  setH(R.feed, renderText(FEED));
+  setT(R.lfeed, SCRIPT.tierName);
+
+  /* scribes */
+  setH(R.sctot, numHTMLn(E.total));
+  var un = unassigned();
+  setH(R.scun, numHTMLn(un));
+  ["copy", "count", "cross"].forEach(function (t) {
+    setH(R["an_" + t], renderText(TASK_NAMES[t]));
+    setH(R["a_" + t], numHTMLn(S.scribes[t]));
+    var rate = t === "copy" ? E.copyRate : t === "count" ? E.analysisRate : E.contextRate;
+    setH(R["ar_" + t], "+" + numHTML(rate));
+  });
+  setH(R.cs1, numHTML(nextS));
+  cls($("cs1").parentNode, "ok", S.corpus.gte(nextS));
+  var mx = maxBuy(E.scribeCost, K.SCRIBE_GROWTH, S.bought, S.corpus);
+  setH(R.csm, mx > 0 ? numHTMLn(mx) : "&mdash;");
+  cls($("csm").parentNode, "ok", mx > 0);
+
+  /* marks */
+  setH(R.mkn, numHTMLn(R.gRows ? R.gRows.length : 0));
+  setH(R.rdn, fmtPct(L));
+  if (R.gRows) {
+    var rank = 0;
+    for (var j = 0; j < R.gRows.length; j++) {
+      var i = R.gRows[j];
+      var o = $("go" + i), mb = $("gm" + i), tr = $("gr" + i);
+      if (o) setH(o, numHTMLn(Math.floor(occ(i, E) * 10)));
+      if (mb) { setW(mb.firstChild, Math.min(100, S.conf[i] * 100)); cls(mb, "near", S.conf[i] > 0.75); }
+      if (tr) { cls(tr, "sel", S.sel === i); cls(tr, "pen", S.pen[i] > S.t); }
+      if (E.crib) { var xx = $("gx" + i); if (xx) setT(xx, String(++rank)); }
+    }
+  }
+  if (R.gc) setH(R.gc, numHTML(gc));
+
+  /* tech */
+  for (var u = 0; u < UPGRADES.length; u++) {
+    var uu = UPGRADES[u], lv = upgLevel(uu.id);
+    if (lv >= uu.max) continue;
+    var full = upgPrice(uu, false), bl = upgPrice(uu, true), have = resOf(uu.res);
+    var ce = $("uc" + uu.id); if (ce) setH(ce, numHTML(full));
+    var be = $("ub" + uu.id); if (be) cls(be, "ok", have.gte(full));
+    var de = $("ud" + uu.id); if (de) { setH(de, numHTML(bl)); cls(de.parentNode, "ok", have.gte(bl)); }
+    var ne = $("un" + uu.id);
+    if (ne) { setH(ne, numHTML(D.of(nameCost()))); cls(ne.parentNode, "ok", S.analysis.gte(D.of(nameCost()))); }
+  }
+  setH(R.upn, numHTMLn(Object.keys(S.upg).length));
+
+  /* transcribe / lexicon / canon */
+  setT(R.trleg, fmtPct(L));
+  setH(R.trc, canTranscribe() ? "+" + fmt(lexGain()) : "at 100%");
+  cls($("trc").parentNode, "ok", canTranscribe());
+  $("trc").parentNode.disabled = !canTranscribe();
+  setT(R.lxn, fmt(S.lex) + " lexicon");
+  for (var l = 0; l < LEX.length; l++) {
+    var nd = LEX[l];
+    if (S.lexOwn[nd.id] || !lexAvail(nd)) continue;
+    var lb = $("lb" + nd.id);
+    if (lb) cls(lb, "ok", S.lex.gte(D.of(nd.cost)));
+  }
+  var req = pubReq();
+  setT(R.pubv, fmt(S.lifeLex) + " / " + fmt(req));
+  setW(R.pubb, Math.min(100, 100 * S.lifeLex.log10z() / Math.max(1e-9, req.log10z())));
+  cls($("pubb"), "on", canPublish());
+  setT(R.pubc, canPublish() ? "ready" : "not yet");
+  cls($("pubc").parentNode, "ok", canPublish());
+  $("pubc").parentNode.disabled = !canPublish();
+  setT(R.cnn, S.canon.length + " passages");
+  setT(R.arv, "saved " + fmtTime(Math.max(0, S.t - SAVED_AT)) + " ago");
+  updateTip();
+}
+function upRes(name, val, rate, target) {
+  setH(R[name + "N"], renderText(RES_NAMES[name]));
+  setH(R[name + "V"], numHTML(val));
+  setH(R[name + "R"], "+" + numHTML(rate));
+  var p = target && !target.isZero() ? Math.min(1, Math.max(0, val.div(target).num())) : 0;
+  setW(R[name + "B"], p * 100);
+  cls(R[name + "B"].parentNode, "on", p >= 1);
+}
+
+/* ---------------- tips ---------------------------------------------------- */
+function updateTip() {
+  var i, t;
+  if (S.tips.cur) {
+    t = byId(TIPS, S.tips.cur);
+    if (!t || !safeWhen(t)) { S.tips.seen[S.tips.cur] = 1; S.tips.cur = null; }  // played past it = read it
+  }
+  if (!S.tips.cur) {
+    for (i = 0; i < TIPS.length; i++) {
+      t = TIPS[i];
+      if (!S.tips.seen[t.id] && safeWhen(t)) { S.tips.cur = t.id; break; }
+    }
+  }
+  if (!S.tips.cur) { setH(R.tip, ""); return; }
+  t = byId(TIPS, S.tips.cur);
+  setH(R.tip, "<b>" + esc(t.head) + "</b>" + esc(t.text) +
+    '<button class="tipx" data-a="tipx">[dismiss]</button>');
+}
+function safeWhen(t) { try { return !!t.when(); } catch (e) { return false; } }
+
+/* ---------------- tutorial overlay ---------------------------------------- */
+var HELP =
+  '<h1>CIPHER</h1><div class="dimtxt">You cannot read your own numbers. Every label, every ' +
+  'upgrade name and every digit on this screen is written in a script nobody has decoded. ' +
+  'Fixing that is the first job, and it takes about a minute and a half.</div>' +
+  '<h2>START HERE</h2><dl>' +
+  '<dt>scribes</dt><dd>a pool you allocate, never spend. move them between the three tasks freely and as often as you like.</dd>' +
+  '<dt>the three tasks</dt><dd>top to bottom: copy makes corpus, count makes analysis, cross-reference makes context. the rate beside each one tells you which is which.</dd>' +
+  '<dt>marks</dt><dd>each undecoded glyph shows honest statistics: times seen, word-initial %, word-final %, doubled %. the bar on the right is how close it is to resolving on its own.</dd>' +
+  '<dt>guessing</dt><dd>optional. select a mark, spend analysis, name a letter. right resolves it instantly; wrong only slows that one mark for twenty seconds.</dd>' +
+  '</dl><h2>THE SCRIPT</h2><dl>' +
+  '<dt>substitution</dt><dd>one mark, one letter. knowledge is per-letter, so half-decoded words read like a crossword: g?te is gate.</dd>' +
+  '<dt>digits first</dt><dd>the ten numerals resolve far faster than letters. once they land, your numbers come back.</dd>' +
+  '<dt>legibility</dt><dd>the fraction of the script you can read. it is also the global production multiplier: understanding your own notes makes every process faster.</dd>' +
+  '<dt>the log</dt><dd>stored in the script, not in translation. decode a letter and everything you have already been told changes. scroll back.</dd>' +
+  '</dl><h2>LATER, IN THIS ORDER</h2><dl>' +
+  '<dt>tech</dt><dd>an upgrade shows its cost, never its effect. read its label with analysis and buy informed, or buy blind for 40% off.</dd>' +
+  '<dt>transcribe</dt><dd>at 100% legibility: resets this script and its resources, grants lexicon, and deals a new script one tier harder.</dd>' +
+  '<dt>lexicon</dt><dd>permanent tooling, kept through transcribing. every node is a switch, so the late game is configuring a machine.</dd>' +
+  '<dt>publish</dt><dd>much later. resets the lexicon for a passage of an authored text and one permanent ability. every ability is a pure gain.</dd>' +
+  '</dl><h2>GOOD TO KNOW</h2><dl>' +
+  '<dt>idle</dt><dd>marks resolve whether or not you are watching, and offline time is credited.</dd>' +
+  '<dt>harder hands</dt><dd>later scripts add homophones, nulls, ligatures and positional forms, in that order.</dd>' +
+  '<dt>saving</dt><dd>automatic every ten seconds, locally. export and import by hand from the archive panel.</dd>' +
+  '<dt>closing</dt><dd>escape, or the ? in the header.</dd>' +
+  '</dl><button class="b" data-a="close" style="margin-top:14px">close</button>';
+
+function showHelp(on) { $("ov").classList[on ? "add" : "remove"]("show"); }
+
+/* ---------------- events -------------------------------------------------- */
+function wire() {
+  document.body.addEventListener("click", function (ev) {
+    var n = ev.target, a = null, guard = 0;
+    while (n && guard++ < 6) { if (n.getAttribute && n.getAttribute("data-a")) { a = n; break; } n = n.parentNode; }
+    if (!a) return;
+    var act = a.getAttribute("data-a");
+    var id = a.getAttribute("data-i"), t = a.getAttribute("data-t"), v = a.getAttribute("data-v");
+    if (act === "p") assign(t, 1);
+    else if (act === "m") assign(t, -1);
+    else if (act === "buy1") buyScribes(1);
+    else if (act === "buymax") buyScribes("max");
+    else if (act === "sel") { S.sel = +id; STRUCT_DIRTY = true; }
+    else if (act === "g") guess(S.sel, v);
+    else if (act === "up") buyUpg(id, false);
+    else if (act === "ub") buyUpg(id, true);
+    else if (act === "dn") decodeName(id);
+    else if (act === "lb") lexBuy(id);
+    else if (act === "lt") lexToggle(id);
+    else if (act === "tr") transcribe();
+    else if (act === "pub") publish();
+    else if (act === "tipx") { if (S.tips.cur) { S.tips.seen[S.tips.cur] = 1; S.tips.cur = null; } }
+    else if (act === "exp") doExport();
+    else if (act === "dl") doDownload();
+    else if (act === "imp") doImport();
+    else if (act === "reset") doReset(a);
+    else if (act === "close") showHelp(false);
+    updateUI();
+  });
+  $("bhelp").addEventListener("click", function () { showHelp(true); });
+  $("ov").addEventListener("click", function (e) { if (e.target === $("ov")) showHelp(false); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") showHelp(false); });
+}
+
+/* ============================================================================
+   11. BOOT - save/load, offline catch-up, fixed-step loop, event wiring
+   ========================================================================== */
+var LS = (function () {
+  try { if (typeof localStorage !== "undefined") return localStorage; } catch (e) {}
+  var m = {};
+  return { getItem: function (k) { return m[k] === undefined ? null : m[k]; },
+           setItem: function (k, v) { m[k] = String(v); },
+           removeItem: function (k) { delete m[k]; } };
+})();
+function b64e(s) { return typeof btoa === "function" ? btoa(s) : Buffer.from(s, "utf8").toString("base64"); }
+function b64d(s) { return typeof atob === "function" ? atob(s) : Buffer.from(s, "base64").toString("utf8"); }
+
+var SAVED_AT = 0;
+function save() {
+  try {
+    SAVED_AT = S.t;
+    LS.setItem(SAVE_KEY, b64e(JSON.stringify(ser())));
+    return true;
+  } catch (e) { return false; }
+}
+function load() {
+  var raw = null;
+  try { raw = LS.getItem(SAVE_KEY); } catch (e) { raw = null; }
+  if (!raw) return false;
+  try { return deser(JSON.parse(b64d(raw))); } catch (e) { return false; }
+}
+
+function doExport() {
+  R.sav.value = b64e(JSON.stringify(ser()));
+  R.sav.select();
+  try { if (navigator.clipboard) navigator.clipboard.writeText(R.sav.value); } catch (e) {}
+  logAdd("the save is in the box and on the clipboard", 1);
+}
+function doDownload() {
+  var blob = new Blob([b64e(JSON.stringify(ser()))], { type: "text/plain" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "cipher-save.txt"; a.click();
+}
+function doImport() {
+  var v = (R.sav.value || "").trim();
+  if (!v) return;
+  try {
+    if (deser(JSON.parse(b64d(v)))) { logAdd("a save was imported", 1); STRUCT_DIRTY = true; save(); }
+  } catch (e) { logAdd("that save could not be read", 1); }
+}
+var resetArm = 0;
+function doReset(btn) {
+  if (Date.now() - resetArm > 4000) { resetArm = Date.now(); btn.textContent = "press again to erase everything"; return; }
+  resetArm = 0; hardReset();
+}
+
+/* ---- offline catch-up: bounded chunks, reported in one dim line ---- */
+function catchUp() {
+  if (!S.real) return;
+  var elapsed = (Date.now() - S.real) / 1000;
+  if (elapsed < 5 || !isFinite(elapsed)) return;
+  var r = offlineApply(elapsed);
+  if (r) logAdd("away for " + fmtTime(r.away) + "; the scribes worked " + fmtTime(r.used * r.eff) +
+    " of it" + (r.capped ? " and reached the limit" : ""), 1);
+}
+
+/* ---- fixed-step loop ---- */
+var acc = 0, lastT = 0, uiT = 0, saveT = 0;
+function now() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function frame() {
+  var t = now(), dt = (t - lastT) / 1000;
+  lastT = t;
+  if (!isFinite(dt) || dt < 0) dt = 0;
+  if (dt > K.MAXFRAME) dt = K.MAXFRAME;                   // a throttled tab cannot explode the sim
+  acc += dt;
+  var guard = 0;
+  while (acc >= K.STEP && guard++ < 400) { step(K.STEP); acc -= K.STEP; }
+  if (t - FEED_T > 4000) { FEED_T = t; FEED = genLine(strHash("f" + Math.floor(S.t))); }
+  if (t - uiT >= K.UI_MS) { uiT = t; updateUI(); }
+  if (t - saveT >= K.SAVE_MS) { saveT = t; save(); }
+  requestAnimationFrame(frame);
+}
+
+function boot() {
+  if (!load()) { freshGame(); FIRST_RUN = true; }
+  SAVED_AT = S.t;
+  LAST_E = effects();
+  clampAlloc(LAST_E.total);
+  FEED = genLine(1234);
+  catchUp();
+  buildUI();
+  $("ovin").innerHTML = HELP;
+  if (FIRST_RUN) showHelp(true);
+  lastT = now(); uiT = 0; saveT = now();
+  updateUI();
+  document.addEventListener("visibilitychange", save);
+  window.addEventListener("beforeunload", save);
+  requestAnimationFrame(frame);
+}
+var FIRST_RUN = false;
+
+/* test hook: the headless harness drives the game through this */
+var CIPHER_API = {
+  D: D, K: K, geoSum: geoSum, maxBuy: maxBuy,
+  get S() { return S; }, get SCRIPT() { return SCRIPT; },
+  UPGRADES: UPGRADES, LEX: LEX, CANON_ABIL: CANON_ABIL, TIPS: TIPS, CANON_TEXT: CANON_TEXT,
+  freshGame: freshGame, newScript: newScript, makeScript: makeScript,
+  buildAlphabet: buildAlphabet, shapeKey: shapeKey, tooSimilar: tooSimilar,
+  shapeOk: shapeOk, glyphSVG: glyphSVG,
+  encode: encode, plainOf: plainOf, renderText: renderText, genLine: genLine,
+  effects: effects, step: step, legibility: legibility, threshold: threshold, occ: occ,
+  confRate: confRate, scribeCost: scribeCost, buyScribes: buyScribes,
+  upgCost: upgCost, upgPrice: upgPrice, buyUpg: buyUpg, decodeName: decodeName,
+  guess: guess, bestGuess: bestGuess, guessCost: guessCost, guessValue: guessValue,
+  assign: assign, unassigned: unassigned, resolve: resolve, logAdd: logAdd,
+  transcribe: transcribe, canTranscribe: canTranscribe, lexBuy: lexBuy, lexAvail: lexAvail,
+  lexToggle: lexToggle, publish: publish, canPublish: canPublish, pubReq: pubReq, lexGain: lexGain,
+  passageText: passageText, hardReset: hardReset,
+  ser: ser, deser: deser, save: save, load: load, offlineApply: offlineApply,
+  subCriticalCheck: subCriticalCheck, upgSubCritical: upgSubCritical,
+  fmt: fmt, numHTML: numHTML, digitsDone: digitsDone, countResolvedLetters: countResolvedLetters,
+  buildUI: buildUI, updateUI: updateUI, boot: boot, setS: function (x) { S = x; }
+};
+if (typeof window !== "undefined") window.CIPHER = CIPHER_API;
+if (typeof module !== "undefined" && module.exports) module.exports = CIPHER_API;
+if (typeof window !== "undefined" && typeof document !== "undefined" && !window.__CIPHER_NO_BOOT) {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+}
+
+</script>
+</body>
+</html>
+
