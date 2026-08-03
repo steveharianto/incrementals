@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<!-- SIGNAL - a minimalist incremental idle game. Co-authored with CoCo -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIGNAL</title>
+<style>
+:root{
+  --bg:#0b0c0d;
+  --panel:#0f1113;
+  --line:#22262a;
+  --line-hi:#3a4046;
+  --dim:#6b7075;
+  --dimmer:#4a4f54;
+  --fg:#c8ccd0;
+  --accent:#8fb0c8;
+  --font:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font:12px/1.55 var(--font);
+  font-variant-numeric:tabular-nums;
+  -webkit-font-smoothing:antialiased;
+  padding:14px;
+}
+button,input{font:inherit;color:inherit;background:none;border:none;font-variant-numeric:tabular-nums}
+button{cursor:pointer;text-align:left}
+button:disabled{cursor:default}
+
+/* ---------- structure ---------- */
+#app{max-width:1400px;margin:0 auto}
+header{
+  display:flex;gap:14px;align-items:baseline;
+  border-bottom:1px solid var(--line);
+  padding-bottom:8px;margin-bottom:14px;
+}
+header h1{font-size:12px;font-weight:400;letter-spacing:.32em}
+header .crumb{color:var(--dim)}
+header .crumb b{color:var(--fg);font-weight:400}
+header .spacer{flex:1}
+#h-help:hover{color:var(--fg)}
+
+#cols{display:grid;grid-template-columns:250px minmax(0,1fr) 300px;gap:22px;align-items:start}
+@media (max-width:1100px){#cols{grid-template-columns:1fr}}
+
+.sec{margin-bottom:20px}
+.sec>h2{
+  font-size:10px;font-weight:400;letter-spacing:.22em;color:var(--dimmer);
+  margin-bottom:7px;
+}
+
+/* ---------- readouts ---------- */
+.read{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:1px 0}
+.read .k{color:var(--dim)}
+.read .v{text-align:right;white-space:nowrap}
+.read .r{color:var(--dimmer);min-width:74px;text-align:right;white-space:nowrap}
+.read.big .v{font-size:15px}
+
+/* ---------- rows (generators / upgrades / nodes) ---------- */
+.row{
+  display:block;width:100%;position:relative;
+  border:1px solid var(--line);
+  padding:6px 8px 7px;margin-bottom:5px;
+  transition:border-color .12s linear,opacity .12s linear;
+}
+.row:hover:not(:disabled){border-color:var(--line-hi)}
+.row.off{opacity:.45}
+.row .l1{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.row .l2{display:flex;justify-content:space-between;gap:10px;align-items:baseline;color:var(--dim);margin-top:1px}
+.row .nm{letter-spacing:.06em}
+.row .own{color:var(--dim);white-space:nowrap}
+.row .cost{white-space:nowrap;color:var(--dimmer)}
+.row.can .cost{color:var(--accent)}
+.row.can .nm{color:var(--accent)}
+.row .desc{color:var(--dim);margin-top:2px}
+.bar{position:absolute;left:0;bottom:0;height:1px;background:var(--line-hi);transition:width .2s linear}
+.row.can .bar{background:var(--accent)}
+
+.on{color:var(--accent)}
+
+/* ---------- waveform ---------- */
+#wave{display:block;width:100%;height:64px;border:1px solid var(--line)}
+
+/* ---------- log ---------- */
+#log{min-height:96px}
+#log div{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#log div .ts{color:var(--dimmer);margin-right:7px}
+#log div.fresh{color:var(--fg)}
+
+/* ---------- tabs ---------- */
+#tabs{display:flex;gap:14px;border-bottom:1px solid var(--line);padding-bottom:7px;margin-bottom:12px}
+#tabs button{color:var(--dimmer);letter-spacing:.18em;font-size:10px}
+#tabs button:hover{color:var(--dim)}
+#tabs button.sel{color:var(--fg)}
+#tabs .n{color:var(--accent)}
+
+/* ---------- prestige blocks ---------- */
+.act{
+  width:100%;border:1px solid var(--line-hi);padding:8px 9px;margin-bottom:6px;
+  transition:border-color .12s linear;
+}
+.act:hover:not(:disabled){border-color:var(--fg)}
+.act:disabled{border-color:var(--line);color:var(--dimmer)}
+.act .t{display:flex;justify-content:space-between;gap:10px}
+.act .s{color:var(--dim);margin-top:2px}
+.act:disabled .s{color:var(--dimmer)}
+
+.note{color:var(--dim);margin-bottom:9px}
+.hr{height:1px;background:var(--line);margin:14px 0}
+
+/* ---------- save panel ---------- */
+textarea{
+  width:100%;height:90px;resize:vertical;
+  background:var(--panel);border:1px solid var(--line);color:var(--dim);
+  font:11px/1.4 var(--font);padding:6px;
+}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.btnrow button{border:1px solid var(--line);padding:4px 9px;color:var(--dim)}
+.btnrow button:hover{border-color:var(--line-hi);color:var(--fg)}
+.btnrow button.danger:hover{border-color:#7a4a4a;color:#c89a9a}
+input[type=number]{
+  border:1px solid var(--line);background:var(--panel);padding:2px 5px;width:70px;text-align:right;
+}
+input[type=number]:focus{outline:none;border-color:var(--line-hi)}
+
+/* ---------- teaching ---------- */
+#tip{
+  display:none;border:1px solid var(--line);border-left-color:var(--accent);
+  padding:7px 10px;margin-bottom:14px;cursor:pointer;width:100%;
+}
+#tip:hover{border-color:var(--line-hi);border-left-color:var(--accent)}
+#tip .h{color:var(--accent);letter-spacing:.16em;font-size:10px}
+#tip .x{color:var(--dimmer);float:right;letter-spacing:.14em;font-size:10px}
+#tip .b{color:var(--fg);margin-top:2px}
+
+#veil{
+  display:none;position:fixed;inset:0;background:rgba(8,9,10,.86);
+  align-items:center;justify-content:center;padding:20px;z-index:10;
+}
+#veil.on{display:flex}
+#guide{
+  background:var(--panel);border:1px solid var(--line-hi);
+  padding:22px 24px;max-width:560px;width:100%;max-height:88vh;overflow:auto;
+}
+#guide h3{font-size:11px;font-weight:400;letter-spacing:.30em;margin-bottom:3px}
+#guide .sub{color:var(--dim);margin-bottom:16px}
+#guide .grp{
+  color:var(--dimmer);letter-spacing:.20em;font-size:10px;
+  margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);
+}
+#guide dl{display:grid;grid-template-columns:100px 1fr;gap:3px 12px}
+#guide dt{color:var(--accent)}
+#guide dd{color:var(--dim)}
+#guide .later dt{color:var(--fg)}
+#guide .go{
+  margin-top:20px;border:1px solid var(--line-hi);padding:7px 0;width:100%;
+  text-align:center;letter-spacing:.20em;font-size:10px;
+}
+#guide .go:hover{border-color:var(--fg)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>SIGNAL</h1>
+    <span class="crumb">epoch <b id="h-epoch">0</b></span>
+    <span class="crumb">coherence <b id="h-coh">0</b></span>
+    <span class="crumb">insight <b id="h-ins">0</b></span>
+    <span class="spacer"></span>
+    <span class="crumb" id="h-status"></span>
+    <button class="crumb" id="h-help" title="how this works">?</button>
+  </header>
+
+  <button id="tip"></button>
+
+  <div id="cols">
+    <!-- ============ left ============ -->
+    <div>
+      <div class="sec">
+        <h2>RECEPTION</h2>
+        <div id="res"></div>
+      </div>
+      <div class="sec">
+        <h2>WAVEFORM</h2>
+        <canvas id="wave" width="520" height="128"></canvas>
+      </div>
+      <div class="sec">
+        <h2>LOG</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <!-- ============ center ============ -->
+    <div>
+      <div class="sec">
+        <h2>ARRAY</h2>
+        <div id="chain"></div>
+      </div>
+      <div class="sec" id="depth-sec" hidden>
+        <h2>DEPTH</h2>
+        <div id="depth"></div>
+      </div>
+    </div>
+
+    <!-- ============ right ============ -->
+    <div>
+      <div id="tabs"></div>
+      <div id="pane"></div>
+    </div>
+  </div>
+</div>
+
+<div id="veil">
+  <div id="guide">
+    <h3>SIGNAL</h3>
+    <div class="sub">You are decoding a transmission that never ends.</div>
+
+    <div class="grp">START HERE</div>
+    <dl>
+      <dt>Photons</dt><dd>The sky always emits. They accumulate on their own, forever.</dd>
+      <dt>Dish</dt><dd>Spend photons on one and it collects more. That is the whole first move.</dd>
+      <dt>Nothing else</dt><dd>There is no clicking to do. Leave it open and glance over.</dd>
+    </dl>
+
+    <div class="grp">THE ARRAY</div>
+    <dl>
+      <dt>Six tiers</dt><dd>Each tier builds the one below it, down to Dishes, which make photons.</dd>
+      <dt>Milestones</dt><dd>Every 10 purchases of a tier doubles its output. The thin line under a row tracks progress to the next.</dd>
+      <dt>Buying</dt><dd>Click a row for one. Shift-click for as many as you can afford.</dd>
+    </dl>
+
+    <div class="grp">LATER, IN THIS ORDER</div>
+    <dl class="later">
+      <dt>Collapse</dt><dd>At 1e9 photons you may reset the array for Coherence, which multiplies all production. Resetting is how you grow.</dd>
+      <dt>Coherence</dt><dd>Holding it boosts production. Spending it buys upgrades that last until you retune.</dd>
+      <dt>Retune</dt><dd>Trade all coherence for Insight and one Band, chosen from three. Bands are kept forever and stack.</dd>
+      <dt>Tree</dt><dd>Insight buys automation. Every node is permanent and can be switched off. This is where the game starts playing itself.</dd>
+      <dt>Depth</dt><dd>The last node. Collapses convert more with every order of magnitude of insight, without ceiling.</dd>
+    </dl>
+
+    <div class="grp">GOOD TO KNOW</div>
+    <dl>
+      <dt>Saving</dt><dd>Automatic, in this browser. The SAVE tab exports and imports.</dd>
+      <dt>Offline</dt><dd>Time away still counts, at reduced efficiency until you upgrade it.</dd>
+      <dt>This panel</dt><dd>Reopen any time with the ? beside the header.</dd>
+    </dl>
+
+    <button class="go" id="guide-go">BEGIN LISTENING</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* ============================================================================
+   SIGNAL
+   Sections:
+     1. Decimal        - unbounded-exponent number type
+     2. Format         - display helpers
+     3. Content        - all tunable data (tiers, upgrades, nodes, bands)
+     4. State          - shape, defaults, serialization
+     5. Effects        - derived multipliers from every source
+     6. Simulation     - production, purchasing, ticking, automation
+     7. Prestige       - coherence / epoch / depth
+     8. Render         - DOM built once, updated by diff
+     9. Boot           - offline catch-up, loop, wiring
+   ========================================================================== */
+
+/* ==========================================================================
+   1. Decimal  -  {m, e} with 1 <= |m| < 10, or m === 0
+   ========================================================================== */
+class D {
+  constructor(m = 0, e = 0) { this.m = m; this.e = e; this.n(); }
+
+  n() {
+    const m = this.m;
+    if (m === 0 || !isFinite(m)) { this.e = m === 0 ? 0 : this.e; return this; }
+    const s = Math.floor(Math.log10(Math.abs(m)));
+    if (s !== 0) { this.m = m / Math.pow(10, s); this.e += s; }
+    if (Math.abs(this.m) >= 10) { this.m /= 10; this.e += 1; }
+    else if (Math.abs(this.m) < 1) { this.m *= 10; this.e -= 1; }
+    return this;
+  }
+
+  clone()      { const c = new D(); c.m = this.m; c.e = this.e; return c; }
+  isZero()     { return this.m === 0; }
+  log10()      { return this.m <= 0 ? -Infinity : this.e + Math.log10(this.m); }
+  toNumber()   { return this.e > 308 ? Infinity : this.e < -308 ? 0 : this.m * Math.pow(10, this.e); }
+
+  add(o) {
+    o = D.of(o);
+    if (this.m === 0) return o.clone();
+    if (o.m === 0) return this.clone();
+    const [a, b] = this.e >= o.e ? [this, o] : [o, this];
+    const gap = a.e - b.e;
+    if (gap > 17) return a.clone();
+    return new D(a.m + b.m / Math.pow(10, gap), a.e);
+  }
+  sub(o) { o = D.of(o); const r = o.clone(); r.m = -r.m; return this.add(r); }
+  mul(o) { o = D.of(o); return (this.m === 0 || o.m === 0) ? new D(0) : new D(this.m * o.m, this.e + o.e); }
+  div(o) { o = D.of(o); return o.m === 0 ? new D(Infinity) : new D(this.m / o.m, this.e - o.e); }
+
+  pow(k) {
+    if (this.m === 0) return new D(0);
+    const lg = this.log10() * k, e = Math.floor(lg);
+    return new D(Math.pow(10, lg - e), e);
+  }
+
+  cmp(o) {
+    o = D.of(o);
+    if (this.m === 0 && o.m === 0) return 0;
+    if (this.m === 0) return o.m > 0 ? -1 : 1;
+    if (o.m === 0) return this.m > 0 ? 1 : -1;
+    if ((this.m > 0) !== (o.m > 0)) return this.m > 0 ? 1 : -1;
+    const s = this.m > 0 ? 1 : -1;
+    if (this.e !== o.e) return (this.e > o.e ? 1 : -1) * s;
+    return this.m === o.m ? 0 : (this.m > o.m ? 1 : -1);
+  }
+  gte(o) { return this.cmp(o) >= 0; }
+  gt(o)  { return this.cmp(o) >  0; }
+  lt(o)  { return this.cmp(o) <  0; }
+  max(o) { o = D.of(o); return this.gte(o) ? this.clone() : o.clone(); }
+
+  ser()  { return [this.m, this.e]; }
+  static fromLog10(x) {
+    if (!isFinite(x)) return new D(x > 0 ? Infinity : 0);
+    const e = Math.floor(x);
+    return new D(Math.pow(10, x - e), e);
+  }
+  static de(a) { return Array.isArray(a) ? new D(a[0], a[1]) : new D(Number(a) || 0); }
+  static of(v) { return v instanceof D ? v : new D(v, 0); }
+}
+const d    = (m, e = 0) => new D(m, e);
+const ZERO = () => new D(0);
+const ONE  = () => new D(1);
+
+/* ==========================================================================
+   2. Format
+   ========================================================================== */
+function fmt(v) {
+  v = D.of(v);
+  if (v.m === 0) return "0";
+  if (v.m < 0) return "-" + fmt(v.mul(-1));
+  if (v.e >= 6) return v.m.toFixed(2) + "e" + v.e;
+  const n = v.toNumber();
+  if (n < 10)   return n.toFixed(2);
+  if (n < 1000) return n.toFixed(1);
+  return Math.floor(n).toLocaleString("en-US");
+}
+/* whole-number display for prestige currencies */
+function fmtQ(v) {
+  v = D.of(v);
+  return v.e < 6 ? Math.floor(v.toNumber()).toLocaleString("en-US") : fmt(v);
+}
+/* keep small quantities integral so early numbers read cleanly */
+function floorQ(v) { return v.e < 15 ? new D(Math.floor(v.toNumber())) : v; }
+
+function fmtInt(n) {
+  if (!isFinite(n)) return "\u221e";
+  return Math.floor(n).toLocaleString("en-US");
+}
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s));
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60), h = Math.floor(m / 60), dd = Math.floor(h / 24);
+  if (m < 60) return m + "m " + (s % 60) + "s";
+  if (h < 24) return h + "h " + (m % 60) + "m";
+  return dd + "d " + (h % 24) + "h";
+}
+function clock() {
+  const t = new Date();
+  return String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0");
+}
+
+/* ==========================================================================
+   3. Content   -  every balance number lives here
+   ========================================================================== */
+
+/* Generator chain. Tier 0 makes photons; tier i>0 makes tier i-1.
+   out  = units produced per second per unit owned
+   mult = cost growth per purchase                                          */
+const TIERS = [
+  { name: "Dish",       cost: d(1, 1),  out: 1.00, mult: 1.60 },
+  { name: "Preamp",     cost: d(1, 3),  out: 0.50, mult: 1.65 },
+  { name: "Mixer",      cost: d(1, 5),  out: 0.30, mult: 1.70 },
+  { name: "Filter",     cost: d(2, 7),  out: 0.20, mult: 1.75 },
+  { name: "Correlator", cost: d(5, 9),  out: 0.15, mult: 1.80 },
+  { name: "Decoder",    cost: d(2, 11), out: 0.10, mult: 1.85 },
+];
+
+const BASE_FLOW   = d(1);      // the sky always emits - makes the game bootstrap with zero clicks
+const PRESTIGE_AT = d(1, 9);   // photons needed for first coherence
+/* Within a single cycle the array is deliberately sub-critical: a purchase
+   costs more orders of magnitude (>= log10 COST_FLOOR) than the milestone it
+   contributes to pays back (log10 2 / MILE_FLOOR). That guarantees every cycle
+   settles instead of exploding, at any combination of upgrades.
+     worst case ratio = (0.301 / 5) / log10(1.35) = 0.46 < 1                   */
+const COST_FLOOR  = 1.35;      // tier cost growth can never fall below this
+const MILE_FLOOR  = 5;         // milestone interval can never fall below this
+
+/* Growth between cycles: coherence multiplies production by its own COH_POW
+   power, and a collapse converts photon magnitude into coherence magnitude
+   divided by the conversion divisor. The loop gain per collapse is therefore
+       COH_POW / (divisor * (1 - subcritical ratio))
+   and the divisor can never fall below DEPTH_FLOOR, which pins the worst case
+   loop gain at 1 / 1.7 / (1 - 0.46) = 0.94 < 1. The loop always converges, so
+   progress comes from raising the ceiling with upgrades rather than from a
+   feedback blow-up - which is what keeps the pacing predictable at any depth. */
+const COH_DIV     = 2.0;       // photon orders of magnitude per order of coherence
+const COH_SHARP   = 0.2;       // reduction to the divisor from Sharpen peak
+const COH_POW     = 1;         // coherence is raised to this to multiply production
+const DEPTH_FLOOR = 1.7;       // the divisor can never go below this
+/* Coherence reaches astronomical magnitudes, so the epoch requirement is
+   stated in log space and insight counts orders of magnitude rather than value. */
+/* The requirement grows polynomially in log space. Time per epoch then grows
+   only as epoch^(EPOCH_REQ_P - 1), a gently decaying cadence that never stops -
+   an exponential requirement instead stalls out permanently. */
+const EPOCH_REQ0  = 1.6;       // log10 lifetime coherence needed for epoch 1
+const EPOCH_REQ_P = 1.45;       // requirement exponent against the epoch number
+const INS_DIV     = 1.2;       // orders of magnitude of coherence per insight
+const DEPTH_EPOCH = 10;        // epoch required before Depth node unlocks
+/* Depth closes the gap between the current divisor and DEPTH_FLOOR, driven by
+   the magnitude of insight. It approaches the floor without ever reaching it,
+   so it is a large permanent gain that still cannot destabilise the loop. */
+const DEPTH_STEP  = 0.20;      // how fast insight magnitude closes that gap
+
+/* Coherence shop. rep:true = repeatable, cost grows by `growth`.        */
+const SHOP = [
+  { id: "amp",   name: "Amplify",    cost: 2,  rep: true,  growth: 3,
+    desc: "All production \u00d72, compounding." },
+  { id: "tune",  name: "Fine tune",  cost: 6,  rep: true,  growth: 4,
+    desc: "Coherence gain +15%, compounding." },
+  { id: "mile",  name: "Dense array", cost: 8,
+    desc: "Milestones every 5 purchases instead of 10." },
+  { id: "cheap", name: "Mass produce", cost: 5,
+    desc: "Tier cost growth reduced by 0.05." },
+  { id: "off",   name: "Cold storage", cost: 4,
+    desc: "Offline efficiency 25% \u2192 60%." },
+  { id: "peak",  name: "Sharpen peak", cost: 14,
+    desc: "Collapses convert photon magnitude to coherence far more efficiently." },
+  { id: "link",  name: "Feedback loop", cost: 20,
+    desc: "Decoders boost Dishes: \u00d7(1 + 0.05 \u00b7 decoders bought)." },
+  { id: "seed",  name: "Warm start",  cost: 10,
+    desc: "Begin every reset with 12 Dishes and 4 Preamps." },
+];
+
+/* Automation tree - bought with insight, never reset.
+   toggle:true  = has an on/off switch
+   req          = ids that must be owned first                             */
+const NODES = [
+  { id: "a0", name: "Autobuy Dish",       cost: 1,  toggle: true },
+  { id: "a1", name: "Autobuy Preamp",     cost: 2,  toggle: true, req: ["a0"] },
+  { id: "a2", name: "Autobuy Mixer",      cost: 3,  toggle: true, req: ["a1"] },
+  { id: "a3", name: "Autobuy Filter",     cost: 5,  toggle: true, req: ["a2"] },
+  { id: "a4", name: "Autobuy Correlator", cost: 8,  toggle: true, req: ["a3"] },
+  { id: "a5", name: "Autobuy Decoder",    cost: 13, toggle: true, req: ["a4"] },
+  { id: "max",   name: "Bulk logic",   cost: 10, toggle: true, req: ["a1"],
+    desc: "Autobuyers purchase the maximum affordable instead of one." },
+  { id: "off100", name: "Deep sleep",  cost: 4,
+    desc: "Offline efficiency raised to 100%." },
+  { id: "offcap", name: "Long memory", cost: 12, req: ["off100"],
+    desc: "Removes the 24 hour offline cap." },
+  { id: "acoh", name: "Auto-collapse", cost: 6, toggle: true,
+    desc: "Collapse automatically once the coherence gain reaches a threshold." },
+  { id: "aep",  name: "Auto-retune",   cost: 25, toggle: true, req: ["acoh"],
+    desc: "Retune automatically when an epoch is available. Picks a band at random." },
+  { id: "depth", name: "Depth",        cost: 40, req: ["aep"],
+    desc: "Collapses convert more photon magnitude into coherence as insight grows. No ceiling." },
+];
+
+/* Bands - one kept per epoch, they stack across epochs.
+   Every band is a pure gain on its own axis, so there are no trap picks and
+   auto-retune can choose blindly. Effects are polynomial in the stack count,
+   so stacking accelerates without ever running away. */
+const BANDS = [
+  { id: "narrow", name: "Narrowband", desc: "Production \u00d75 per copy." },
+  { id: "deep",   name: "Deep field", desc: "Coherence gain \u00d71.6 per copy." },
+  { id: "wide",   name: "Wideband",   desc: "Every tier produces 25% more per copy." },
+  { id: "sharp",  name: "Sharp",      desc: "Insight gain +30% per copy." },
+  { id: "still",  name: "Stillness",  desc: "Offline efficiency +30 points per copy." },
+  { id: "clean",  name: "Clean line", desc: "Tier cost growth \u22120.02 per copy." },
+];
+const BAND_BY_ID = Object.fromEntries(BANDS.map(b => [b.id, b]));
+
+/* Just-in-time teaching. Each tip fires once, the moment its mechanic becomes
+   relevant, so nothing is explained before the player can act on it. */
+const TIPS = [
+  { id: "buy",   head: "FIRST MOVE",
+    when: () => S.photons.gte(10) && S.bought[0] === 0,
+    text: "You can afford a Dish. Click the Dish row to buy it - it collects photons for you." },
+  { id: "feed",  head: "THE ENGINE",
+    when: () => S.bought[0] >= 1,
+    text: "Preamps build Dishes for you, and every tier above does the same for the one below. Buy upward when you can." },
+  { id: "bulk",  head: "SHORTCUT",
+    when: () => S.bought[0] >= 8,
+    text: "Shift-click any row to buy as many as you can afford at once." },
+  { id: "mile",  head: "MILESTONES",
+    when: () => S.bought[0] >= 10,
+    text: "Ten purchases doubled that tier's output. The line under each row shows how close the next doubling is." },
+  { id: "coll",  head: "COLLAPSE READY",
+    when: E => !cohGain(E).isZero() && S.collapses === 0,
+    text: "Open EPOCH and collapse. You lose the array and keep Coherence, which multiplies everything. Resetting is the way forward." },
+  { id: "shop",  head: "SPEND IT",
+    when: () => S.coherence.gte(2),
+    text: "The COHERENCE tab converts coherence into upgrades. Amplify is repeatable and compounds - it is usually the right first buy." },
+  { id: "retune", head: "RETUNE READY",
+    when: E => !insGain(E).isZero() && S.epoch === 0,
+    text: "You can retune. Coherence and its upgrades are lost; you gain Insight and one permanent Band of three. Bands never go away." },
+  { id: "tree",  head: "AUTOMATION",
+    when: () => S.insight.gte(1),
+    text: "Insight buys nodes in TREE. Start with Autobuy Dish - from here the array can run itself while you do other things." },
+  { id: "auto",  head: "HANDS OFF",
+    when: () => !!S.nodes.acoh,
+    text: "Auto-collapse is yours. Set its threshold in the SAVE tab, and the loop runs without you." },
+  { id: "depth", head: "NO CEILING",
+    when: () => !!S.nodes.depth,
+    text: "Depth is active. Every order of magnitude of insight sharpens conversion toward its floor. Progress no longer has an end." },
+];
+
+/* ==========================================================================
+   4. State
+   ========================================================================== */
+const SAVE_KEY = "signal.save.v1";
+
+function newState() {
+  return {
+    v: 1,
+    t: Date.now(),
+    start: Date.now(),
+
+    photons: ZERO(),
+    peak: ZERO(),                            // highest photons this collapse
+    amount: TIERS.map(() => ZERO()),         // continuous, drives production
+    bought: TIERS.map(() => 0),              // discrete, drives cost + milestones
+    seen: 1,                                 // tiers ever revealed
+
+    coherence: ZERO(),
+    cohLifetime: ZERO(),
+    shop: {},                                // id -> count
+    collapses: 0,
+
+    insight: ZERO(),
+    insLifetime: ZERO(),
+    nodes: {},                               // id -> true
+    toggles: {},                             // id -> bool
+    epoch: 0,
+    bands: {},                               // id -> count
+    offer: null,                             // pending band choice [ids]
+
+    autoCohAt: 1,
+    tab: "shop",
+    log: [],
+    guided: false,                           // has the opening panel been seen
+    tips: {},                                // id -> true once dismissed
+  };
+}
+let S = newState();
+
+function serialize() {
+  return btoa(unescape(encodeURIComponent(JSON.stringify({
+    ...S,
+    photons: S.photons.ser(),
+    peak: S.peak.ser(),
+    amount: S.amount.map(a => a.ser()),
+    coherence: S.coherence.ser(),
+    cohLifetime: S.cohLifetime.ser(),
+    insight: S.insight.ser(),
+    insLifetime: S.insLifetime.ser(),
+    log: S.log.slice(-6),
+  }))));
+}
+
+function deserialize(text) {
+  const raw = JSON.parse(decodeURIComponent(escape(atob(text.trim()))));
+  const s = newState();
+  const copy = ["start", "bought", "seen", "shop", "collapses", "nodes", "toggles",
+                "epoch", "bands", "offer", "autoCohAt", "tab", "log", "t", "guided", "tips"];
+  for (const k of copy) if (raw[k] !== undefined) s[k] = raw[k];
+  s.photons = D.de(raw.photons);
+  s.peak = D.de(raw.peak);
+  for (const k of ["coherence", "cohLifetime", "insight", "insLifetime"]) {
+    if (raw[k] !== undefined) s[k] = D.de(raw[k]);
+  }
+  if (Array.isArray(raw.amount)) s.amount = raw.amount.map(D.de);
+  for (const id in s.bands) if (!BAND_BY_ID[id]) delete s.bands[id];
+  if (s.offer) s.offer = s.offer.filter(id => BAND_BY_ID[id]);
+  if (s.offer && !s.offer.length) s.offer = null;
+  while (s.amount.length < TIERS.length) s.amount.push(ZERO());
+  while (s.bought.length < TIERS.length) s.bought.push(0);
+  return s;
+}
+
+function save() {
+  S.t = Date.now();
+  try { localStorage.setItem(SAVE_KEY, serialize()); } catch (e) { /* storage full or blocked */ }
+}
+
+function logLine(msg) {
+  S.log.push({ ts: clock(), msg, fresh: true });
+  if (S.log.length > 6) S.log.shift();
+  UI.logDirty = true;
+}
+
+/* hard ceiling so no exponent can ever reach Infinity and poison a save */
+const E_WALL = 1e250;
+function wall(v) { return (v.e > E_WALL || !isFinite(v.m)) ? new D(1, E_WALL) : v; }
+
+/* ==========================================================================
+   5. Effects  -  every multiplier in one place, recomputed on demand
+   ========================================================================== */
+function effects() {
+  const E = {
+    prod: ONE(),          // photon output multiplier
+    costGrowth: 0,        // subtracted from per-purchase cost growth
+    milestoneEvery: 10,
+    offline: 0.25,
+    offlineCap: 24 * 3600,
+    cohDiv: COH_DIV,
+    cohMult: ONE(),
+    insMult: 1,
+
+    dishBoost: ONE(),
+    outMult: ONE(),
+  };
+  const sc = id => S.shop[id] || 0;
+  const bc = id => S.bands[id] || 0;
+
+  /* coherence passive */
+  if (S.coherence.gte(1)) E.prod = E.prod.mul(S.coherence.pow(COH_POW));
+
+  /* coherence shop */
+  if (sc("amp"))   E.prod = E.prod.mul(d(2).pow(sc("amp")));
+  if (sc("tune"))  E.cohMult = E.cohMult.mul(d(1.15).pow(sc("tune")));
+  if (sc("mile"))  E.milestoneEvery = MILE_FLOOR;
+  if (sc("cheap")) E.costGrowth += 0.05;
+  if (sc("off"))   E.offline = 0.60;
+  if (sc("peak"))  E.cohDiv = Math.max(DEPTH_FLOOR, E.cohDiv - COH_SHARP);
+  if (sc("link"))  E.dishBoost = E.dishBoost.mul(1 + 0.05 * S.bought[5]);
+
+  /* automation tree */
+  if (S.nodes.off100) E.offline = Math.max(E.offline, 1);
+  if (S.nodes.offcap) E.offlineCap = Infinity;
+  if (S.nodes.depth) {
+    const close = 1 + DEPTH_STEP * Math.max(0, S.insLifetime.log10());
+    E.cohDiv = DEPTH_FLOOR + (E.cohDiv - DEPTH_FLOOR) / close;
+  }
+
+  /* bands */
+  if (bc("narrow")) E.prod = E.prod.mul(d(5).pow(bc("narrow")));
+  if (bc("deep"))   E.cohMult = E.cohMult.mul(d(1.6).pow(bc("deep")));
+  if (bc("wide"))   E.outMult = E.outMult.mul(d(1.25).pow(bc("wide")));
+  if (bc("sharp"))  E.insMult *= 1 + 0.3 * bc("sharp");
+  if (bc("still"))  E.offline += 0.3 * bc("still");
+  if (bc("clean"))  E.costGrowth += 0.02 * bc("clean");
+
+  return E;
+}
+
+/* ==========================================================================
+   6. Simulation
+   ========================================================================== */
+function tierMult(i, E) {
+  let m = d(2).pow(Math.floor(S.bought[i] / E.milestoneEvery));
+  if (i === 0) m = m.mul(E.dishBoost);
+  return m;
+}
+/* units per second this tier sends to the thing below it */
+function tierFlow(i, E) {
+  return S.amount[i].mul(TIERS[i].out).mul(tierMult(i, E)).mul(E.outMult);
+}
+function photonRate(E) {
+  return BASE_FLOW.add(tierFlow(0, E)).mul(E.prod);
+}
+function costGrowth(i, E) {
+  return Math.max(COST_FLOOR, TIERS[i].mult - E.costGrowth);
+}
+/* cost of the next k units as a geometric series */
+function tierCost(i, E, k = 1) {
+  const g = costGrowth(i, E);
+  const unit = TIERS[i].cost.mul(d(g).pow(S.bought[i]));
+  return k <= 1 ? unit : unit.mul(d(g).pow(k).sub(1).div(g - 1));
+}
+/* largest k whose series total is still affordable, solved directly */
+function maxBuy(i, E) {
+  const unit = tierCost(i, E);
+  if (S.photons.lt(unit)) return 0;
+  const g = costGrowth(i, E);
+  const L = S.photons.mul(g - 1).div(unit).log10();
+  const L1 = L > 2 ? L : Math.log10(Math.pow(10, L) + 1);
+  return Math.max(1, Math.floor(L1 / Math.log10(g)));
+}
+
+function buyTier(i, bulk) {
+  const E = effects();
+  const k = bulk ? maxBuy(i, E) : (S.photons.gte(tierCost(i, E)) ? 1 : 0);
+  if (k < 1) return false;
+  const spent = tierCost(i, E, k);
+  if (S.photons.lt(spent)) return false;
+
+  const mBefore = Math.floor(S.bought[i] / E.milestoneEvery);
+  S.photons = S.photons.sub(spent);
+  S.bought[i] += k;
+  S.amount[i] = S.amount[i].add(k);
+  const mAfter = Math.floor(S.bought[i] / E.milestoneEvery);
+
+  if (mAfter > mBefore) {
+    logLine("milestone \u00b7 " + TIERS[i].name.toLowerCase() + " \u00d7" + fmt(d(2).pow(mAfter - mBefore)));
+  }
+  if (i + 2 > S.seen) {
+    const next = Math.min(TIERS.length - 1, i + 2);
+    if (next > S.seen) logLine("revealed \u00b7 " + TIERS[next].name.toLowerCase());
+    S.seen = next;
+  }
+  UI.paneDirty = true;
+  return true;
+}
+
+function tick(dt, E) {
+  const flow = TIERS.map((_, i) => tierFlow(i, E));
+  for (let i = TIERS.length - 2; i >= 0; i--) S.amount[i] = wall(S.amount[i].add(flow[i + 1].mul(dt)));
+  S.photons = wall(S.photons.add(photonRate(E).mul(dt)));
+  if (S.photons.gt(S.peak)) S.peak = S.photons.clone();
+}
+
+function automate(E) {
+  const bulk = !!(S.nodes.max && S.toggles.max);
+  for (let i = 0; i < TIERS.length; i++) {
+    const id = "a" + i;
+    if (S.nodes[id] && S.toggles[id]) buyTier(i, bulk);
+  }
+  if (S.nodes.acoh && S.toggles.acoh && cohGain(E).gte(S.autoCohAt)) collapse();
+  if (S.nodes.aep && S.toggles.aep) {
+    if (S.offer) chooseBand(S.offer[Math.floor(Math.random() * S.offer.length)]);
+    else if (!insGain(effects()).isZero()) S.offer = pickOffer();
+  }
+}
+
+/* ==========================================================================
+   7. Prestige
+   ========================================================================== */
+function cohGain(E) {
+  const lp = S.peak.log10();
+  if (!isFinite(lp) || lp < PRESTIGE_AT.log10()) return ZERO();
+  return wall(floorQ(D.fromLog10((lp - 8) / E.cohDiv).mul(E.cohMult)));
+}
+function epochReq() {
+  return D.fromLog10(EPOCH_REQ0 * Math.pow(1 + S.epoch, EPOCH_REQ_P));
+}
+function insGain(E) {
+  if (S.cohLifetime.lt(epochReq())) return ZERO();
+  return floorQ(d(S.cohLifetime.log10() / INS_DIV).mul(E.insMult)).max(1);
+}
+
+function resetArray() {
+  S.photons = ZERO();
+  S.peak = ZERO();
+  S.amount = TIERS.map(() => ZERO());
+  S.bought = TIERS.map(() => 0);
+  if ((S.shop.seed || 0) > 0) {
+    S.bought[0] = 12; S.amount[0] = d(12);
+    S.bought[1] = 4;  S.amount[1] = d(4);
+    S.seen = Math.max(S.seen, 2);
+  }
+  UI.paneDirty = true;
+}
+
+function collapse() {
+  const E = effects();
+  const g = cohGain(E);
+  if (g.isZero()) return;
+  S.coherence = wall(S.coherence.add(g));
+  S.cohLifetime = wall(S.cohLifetime.add(g));
+  S.collapses++;
+  resetArray();
+  logLine("collapse \u00b7 coherence +" + fmtQ(g));
+}
+
+function pickOffer() {
+  const pool = BANDS.map(b => b.id), out = [];
+  while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out;
+}
+function requestEpoch() {
+  if (insGain(effects()).isZero() || S.offer) return;
+  S.offer = pickOffer();
+  UI.paneDirty = true;
+}
+function chooseBand(id) {
+  if (!S.offer || !S.offer.includes(id)) return;
+  const g = insGain(effects());
+  S.insight = wall(S.insight.add(g));
+  S.insLifetime = wall(S.insLifetime.add(g));
+  S.epoch++;
+  S.bands[id] = (S.bands[id] || 0) + 1;
+  S.offer = null;
+  S.coherence = ZERO();
+  S.cohLifetime = ZERO();
+  S.shop = {};
+  S.collapses = 0;
+  resetArray();
+  logLine("epoch " + S.epoch + " \u00b7 insight +" + fmtQ(g) + " \u00b7 " + BAND_BY_ID[id].name.toLowerCase());
+}
+
+function shopCost(u) {
+  const n = S.shop[u.id] || 0;
+  return u.rep ? Math.ceil(u.cost * Math.pow(u.growth, n)) : u.cost;
+}
+function shopOwned(u) { return (S.shop[u.id] || 0) > 0 && !u.rep; }
+function buyShop(u) {
+  if (shopOwned(u)) return;
+  const c = shopCost(u);
+  if (S.coherence.lt(c)) return;
+  S.coherence = S.coherence.sub(c);
+  S.shop[u.id] = (S.shop[u.id] || 0) + 1;
+  logLine("shop \u00b7 " + u.name.toLowerCase());
+  UI.paneDirty = true;
+}
+
+function nodeReady(nd) {
+  if ((nd.req || []).some(r => !S.nodes[r])) return false;
+  if (nd.id === "depth" && S.epoch < DEPTH_EPOCH) return false;
+  return true;
+}
+function buyNode(nd) {
+  if (S.nodes[nd.id] || !nodeReady(nd) || S.insight.lt(nd.cost)) return;
+  S.insight = S.insight.sub(nd.cost);
+  S.nodes[nd.id] = true;
+  if (nd.toggle) S.toggles[nd.id] = true;
+  logLine("tree \u00b7 " + nd.name.toLowerCase());
+  UI.paneDirty = true;
+}
+
+/* ==========================================================================
+   8. Render
+   ========================================================================== */
+const UI = { chain: [], reads: {}, paneRows: [], paneDirty: true, logDirty: true,
+             tab: null, status: 0, tipId: null, guideOpen: false };
+
+const $ = id => document.getElementById(id);
+function el(tag, cls, txt) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+function readRow(host, key, label, big) {
+  const r = el("div", "read" + (big ? " big" : ""));
+  r.appendChild(el("span", "k", label));
+  const wrap = el("span");
+  const v = el("span", "v");
+  const rate = el("span", "r");
+  wrap.append(v, document.createTextNode(" "), rate);
+  r.appendChild(wrap);
+  host.appendChild(r);
+  UI.reads[key] = { v, rate, root: r };
+}
+
+function buildStatic() {
+  /* readouts */
+  const res = $("res");
+  readRow(res, "photons", "photons", true);
+  readRow(res, "mult", "multiplier");
+  readRow(res, "mile", "milestone");
+  readRow(res, "off", "offline");
+  readRow(res, "peak", "peak");
+
+  /* generator chain */
+  const chain = $("chain");
+  TIERS.forEach((T, i) => {
+    const b = el("button", "row");
+    const l1 = el("div", "l1");
+    const nm = el("span", "nm", T.name);
+    const own = el("span", "own");
+    l1.append(nm, own);
+    const l2 = el("div", "l2");
+    const prod = el("span");
+    const cost = el("span", "cost");
+    l2.append(prod, cost);
+    const bar = el("div", "bar");
+    b.append(l1, l2, bar);
+    b.addEventListener("click", ev => { buyTier(i, ev.shiftKey); renderNow(); });
+    chain.appendChild(b);
+    UI.chain.push({ root: b, nm, own, prod, cost, bar });
+  });
+  const hint = el("div", "note", "click to buy one \u00b7 shift-click to buy max");
+  hint.style.marginTop = "6px";
+  chain.appendChild(hint);
+
+  /* depth */
+  const dp = $("depth");
+  readRow(dp, "dexp", "divisor");
+  readRow(dp, "dins", "floor");
+
+  /* teaching */
+  UI.tip = $("tip");
+  UI.veil = $("veil");
+  UI.tip.addEventListener("click", () => {
+    if (UI.tipId) S.tips[UI.tipId] = true;
+    renderNow();
+  });
+  $("h-help").addEventListener("click", () => setGuide(true));
+  $("guide-go").addEventListener("click", () => setGuide(false));
+  addEventListener("keydown", e => { if (e.key === "Escape" && UI.guideOpen) setGuide(false); });
+
+  /* tabs */
+  const tabs = [["shop", "COHERENCE"], ["tree", "TREE"], ["epoch", "EPOCH"], ["save", "SAVE"]];
+  const host = $("tabs");
+  UI.tabBtns = {};
+  tabs.forEach(([id, label]) => {
+    const b = el("button", "", label);
+    b.addEventListener("click", () => { S.tab = id; UI.paneDirty = true; renderNow(); });
+    host.appendChild(b);
+    UI.tabBtns[id] = b;
+  });
+}
+
+/* --- panes ------------------------------------------------------------- */
+function buildPane() {
+  const host = $("pane");
+  host.textContent = "";
+  UI.paneRows = [];
+  UI.tab = S.tab;
+  ({ shop: paneShop, tree: paneTree, epoch: paneEpoch, save: paneSave }[S.tab] || paneShop)(host);
+}
+
+function upgradeRow(host, name, costText, descText, canFn, onClick) {
+  const b = el("button", "row");
+  const l1 = el("div", "l1");
+  const nm = el("span", "nm", name);
+  const c = el("span", "cost", costText);
+  l1.append(nm, c);
+  b.appendChild(l1);
+  if (descText) b.appendChild(el("div", "desc", descText));
+  if (onClick) b.addEventListener("click", () => { onClick(); renderNow(); });
+  else b.disabled = true;
+  host.appendChild(b);
+  UI.paneRows.push({ root: b, canFn });
+  return b;
+}
+
+function paneShop(host) {
+  host.appendChild(el("div", "note",
+    "coherence available: " + fmtQ(S.coherence) + " \u00b7 holding it gives \u00d7"
+    + fmt(S.coherence.gte(1) ? S.coherence.pow(COH_POW) : ONE()) + " production"));
+  SHOP.forEach(u => {
+    const n = S.shop[u.id] || 0;
+    const owned = shopOwned(u);
+    upgradeRow(host,
+      u.name + (u.rep && n ? " \u00d7" + n : ""),
+      owned ? "held" : fmtInt(shopCost(u)),
+      u.desc,
+      () => !owned && S.coherence.gte(shopCost(u)),
+      owned ? null : () => buyShop(u));
+  });
+}
+
+function paneTree(host) {
+  host.appendChild(el("div", "note", "insight available: " + fmtQ(S.insight) + " \u00b7 nodes are permanent"));
+  NODES.forEach(nd => {
+    const owned = !!S.nodes[nd.id];
+    const ready = nodeReady(nd);
+    const locked = !owned && !ready;
+    const on = owned && nd.toggle ? !!S.toggles[nd.id] : false;
+    const label = (owned && nd.toggle ? (on ? "\u25a0 " : "\u25a1 ") : "") + nd.name;
+    const costText = owned ? (nd.toggle ? (on ? "on" : "off") : "held")
+                   : locked ? "locked" : fmtInt(nd.cost);
+    const b = upgradeRow(host, label, costText, nd.desc,
+      () => !owned && ready && S.insight.gte(nd.cost),
+      locked ? null : (owned && !nd.toggle ? null
+        : owned ? () => { S.toggles[nd.id] = !S.toggles[nd.id]; UI.paneDirty = true; }
+                : () => buyNode(nd)));
+    if (locked) b.classList.add("off");
+    if (owned && nd.toggle && on) b.querySelector(".cost").classList.add("on");
+  });
+  if (S.epoch < DEPTH_EPOCH) host.appendChild(el("div", "note", "depth requires epoch " + DEPTH_EPOCH + "."));
+}
+
+function paneEpoch(host) {
+  const E = effects();
+
+  /* collapse */
+  const g = cohGain(E);
+  const canC = !g.isZero();
+  const cb = el("button", "act");
+  const ct = el("div", "t");
+  ct.append(el("span", null, "Collapse"), el("span", null, canC ? "+" + fmtQ(g) + " coherence" : "\u2014"));
+  cb.appendChild(ct);
+  cb.appendChild(el("div", "s", canC
+    ? "Resets the array. Peak " + fmt(S.peak) + " photons."
+    : "Reach " + fmt(PRESTIGE_AT) + " photons to collapse."));
+  cb.disabled = !canC;
+  if (canC) cb.addEventListener("click", () => { collapse(); renderNow(); });
+  host.appendChild(cb);
+
+  /* retune */
+  const ig = insGain(E);
+  const canR = !ig.isZero();
+  const rb = el("button", "act");
+  const rt = el("div", "t");
+  rt.append(el("span", null, "Retune"), el("span", null, canR ? "+" + fmtQ(ig) + " insight" : "\u2014"));
+  rb.appendChild(rt);
+  rb.appendChild(el("div", "s", canR
+    ? "Resets coherence and the shop. Grants a band."
+    : "Needs " + fmtQ(epochReq()) + " lifetime coherence this epoch (" + fmtQ(S.cohLifetime) + ")."));
+  rb.disabled = !canR || !!S.offer;
+  if (!rb.disabled) rb.addEventListener("click", () => { requestEpoch(); renderNow(); });
+  host.appendChild(rb);
+
+  /* band choice */
+  if (S.offer) {
+    host.appendChild(el("div", "hr"));
+    host.appendChild(el("div", "note", "choose one band \u2014 it is kept forever"));
+    S.offer.forEach(id => {
+      const B = BAND_BY_ID[id];
+      const n = S.bands[id] || 0;
+      upgradeRow(host, B.name + (n ? " \u00d7" + n : ""), "take", B.desc, () => true, () => chooseBand(id));
+    });
+  }
+
+  /* held bands */
+  const held = Object.entries(S.bands).filter(([, n]) => n > 0);
+  if (held.length) {
+    host.appendChild(el("div", "hr"));
+    host.appendChild(el("div", "note", "bands held"));
+    held.forEach(([id, n]) => {
+      const r = el("div", "read");
+      r.append(el("span", "k", BAND_BY_ID[id].name), el("span", "v", "\u00d7" + n));
+      host.appendChild(r);
+    });
+  }
+}
+
+function paneSave(host) {
+  host.appendChild(el("div", "note", "everything is stored in this browser. export to move it."));
+
+  const ta = el("textarea");
+  ta.spellcheck = false;
+  ta.placeholder = "paste a save here, then press load";
+  host.appendChild(ta);
+
+  const row = el("div", "btnrow");
+  const mk = (label, fn, cls) => { const b = el("button", cls, label); b.addEventListener("click", fn); row.appendChild(b); };
+  mk("export", () => { ta.value = serialize(); ta.select(); flash("exported"); });
+  mk("load", () => {
+    try { S = deserialize(ta.value); catchUp(); UI.paneDirty = true; flash("loaded"); logLine("save loaded"); renderNow(); }
+    catch (e) { flash("invalid save"); }
+  });
+  mk("download", () => {
+    const a = el("a");
+    a.href = "data:text/plain;charset=utf-8," + encodeURIComponent(serialize());
+    a.download = "signal-save.txt";
+    a.click();
+    flash("downloaded");
+  });
+  mk("wipe", () => {
+    if (UI.wipeArmed) { localStorage.removeItem(SAVE_KEY); S = newState(); UI.paneDirty = true; UI.wipeArmed = false; logLine("hard reset"); renderNow(); }
+    else { UI.wipeArmed = true; flash("press wipe again to confirm"); setTimeout(() => { UI.wipeArmed = false; }, 4000); }
+  }, "danger");
+  host.appendChild(row);
+
+  host.appendChild(el("div", "hr"));
+  const thr = el("div", "read");
+  thr.appendChild(el("span", "k", "auto-collapse at"));
+  const inp = el("input");
+  inp.type = "number"; inp.min = "1"; inp.value = S.autoCohAt;
+  inp.addEventListener("change", () => { S.autoCohAt = Math.max(1, Math.floor(Number(inp.value) || 1)); inp.value = S.autoCohAt; });
+  thr.appendChild(inp);
+  host.appendChild(thr);
+  host.appendChild(el("div", "note", "coherence gain required before auto-collapse fires."));
+
+  host.appendChild(el("div", "hr"));
+  const stats = [
+    ["time played", fmtTime((Date.now() - S.start) / 1000)],
+    ["collapses this epoch", fmtInt(S.collapses)],
+    ["lifetime coherence", fmtQ(S.cohLifetime)],
+    ["lifetime insight", fmtQ(S.insLifetime)],
+  ];
+  stats.forEach(([k, v]) => {
+    const r = el("div", "read");
+    r.append(el("span", "k", k), el("span", "v", v));
+    host.appendChild(r);
+  });
+}
+
+function setGuide(open) {
+  UI.guideOpen = open;
+  UI.veil.classList.toggle("on", open);
+  if (!open && !S.guided) { S.guided = true; save(); }
+}
+
+/* Shows the first unresolved tip whose mechanic is live. A tip that stops
+   applying while on screen is retired, so playing past it counts as reading. */
+function renderTip(E) {
+  const host = UI.tip;
+  if (UI.guideOpen) { host.style.display = "none"; return; }
+
+  if (UI.tipId && !S.tips[UI.tipId]) {
+    const cur = TIPS.find(t => t.id === UI.tipId);
+    if (cur && !cur.when(E)) S.tips[UI.tipId] = true;
+  }
+  const tip = TIPS.find(t => !S.tips[t.id] && t.when(E));
+  if (!tip) { host.style.display = "none"; UI.tipId = null; return; }
+
+  if (UI.tipId !== tip.id) {
+    UI.tipId = tip.id;
+    host.textContent = "";
+    const head = el("div", "h", tip.head);
+    head.appendChild(el("span", "x", "DISMISS"));
+    host.append(head, el("div", "b", tip.text));
+  }
+  host.style.display = "block";
+}
+
+function flash(msg) { $("h-status").textContent = msg; UI.status = performance.now(); }
+
+/* --- per-frame update -------------------------------------------------- */
+function render(E) {
+  $("h-epoch").textContent = fmtInt(S.epoch);
+  $("h-coh").textContent = fmtQ(S.coherence);
+  $("h-ins").textContent = fmtQ(S.insight);
+  if (UI.status && performance.now() - UI.status > 2200) { $("h-status").textContent = ""; UI.status = 0; }
+
+  const rate = photonRate(E);
+  UI.reads.photons.v.textContent = fmt(S.photons);
+  UI.reads.photons.rate.textContent = "+" + fmt(rate) + "/s";
+  UI.reads.mult.v.textContent = "\u00d7" + fmt(E.prod);
+  UI.reads.mile.v.textContent = "every " + E.milestoneEvery;
+  UI.reads.off.v.textContent = Math.round(E.offline * 100) + "%" + (E.offlineCap === Infinity ? " uncapped" : "");
+  UI.reads.peak.v.textContent = fmt(S.peak);
+
+  /* chain */
+  UI.chain.forEach((r, i) => {
+    if (i > S.seen) { r.root.hidden = true; return; }
+    r.root.hidden = false;
+    const cost = tierCost(i, E);
+    const can = S.photons.gte(cost);
+    r.root.classList.toggle("can", can);
+    r.own.textContent = fmt(S.amount[i]) + "  (" + fmtInt(S.bought[i]) + ")";
+    const target = i === 0 ? "photons" : TIERS[i - 1].name.toLowerCase();
+    r.prod.textContent = "\u00d7" + fmt(tierMult(i, E)) + " \u2192 " + fmt(tierFlow(i, E)) + " " + target + "/s";
+    r.cost.textContent = fmt(cost);
+    const p = (S.bought[i] % E.milestoneEvery) / E.milestoneEvery;
+    r.bar.style.width = (p * 100).toFixed(1) + "%";
+  });
+
+  /* depth */
+  const dsec = $("depth-sec");
+  dsec.hidden = !S.nodes.depth;
+  if (S.nodes.depth) {
+    UI.reads.dexp.v.textContent = E.cohDiv.toFixed(4);
+    UI.reads.dins.v.textContent = DEPTH_FLOOR.toFixed(2);
+  }
+
+  /* tabs */
+  const notes = {
+    shop: SHOP.some(u => !shopOwned(u) && S.coherence.gte(shopCost(u))),
+    tree: NODES.some(nd => !S.nodes[nd.id] && nodeReady(nd) && S.insight.gte(nd.cost)),
+    epoch: !cohGain(E).isZero() || !insGain(E).isZero() || !!S.offer,
+    save: false,
+  };
+  for (const id in UI.tabBtns) {
+    const b = UI.tabBtns[id];
+    b.classList.toggle("sel", S.tab === id);
+    b.classList.toggle("n", !!notes[id] && S.tab !== id);
+  }
+
+  /* pane */
+  if (UI.paneDirty || UI.tab !== S.tab) { UI.paneDirty = false; buildPane(); }
+  UI.paneRows.forEach(r => {
+    if (!r.canFn) return;
+    r.root.classList.toggle("can", !!r.canFn());
+  });
+
+  renderTip(E);
+
+  /* log */
+  if (UI.logDirty) {
+    UI.logDirty = false;
+    const host = $("log");
+    host.textContent = "";
+    S.log.slice().reverse().forEach((L, idx) => {
+      const line = el("div", idx === 0 && L.fresh ? "fresh" : "");
+      line.append(el("span", "ts", L.ts), document.createTextNode(L.msg));
+      host.appendChild(line);
+      if (L.fresh) setTimeout(() => { L.fresh = false; line.classList.remove("fresh"); }, 1400);
+    });
+  }
+}
+function renderNow() { render(effects()); }
+
+/* --- waveform ---------------------------------------------------------- */
+function drawWave(t, E) {
+  const c = UI.wave, ctx = UI.ctx, w = c.width, h = c.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "#1c2024";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+
+  const harm = Math.max(1, Math.min(S.seen, TIERS.length));
+  const lr = Math.max(0, photonRate(E).log10());
+  const amp = (h * 0.44) * Math.min(1, 0.16 + lr / 45);
+
+  ctx.strokeStyle = "#7f9cb2";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let x = 0; x <= w; x += 3) {
+    const u = (x / w) * Math.PI * 2;
+    let y = 0, norm = 0;
+    for (let k = 1; k <= harm; k++) {
+      const a = 1 / k;
+      y += a * Math.sin(u * k * 1.7 + t * (0.55 + k * 0.16));
+      norm += a;
+    }
+    const py = h / 2 - (y / norm) * amp;
+    if (x === 0) ctx.moveTo(x, py); else ctx.lineTo(x, py);
+  }
+  ctx.stroke();
+}
+
+/* ==========================================================================
+   9. Boot
+   ========================================================================== */
+function catchUp() {
+  const E = effects();
+  let dt = (Date.now() - S.t) / 1000;
+  if (!isFinite(dt) || dt < 5) return;
+  dt = Math.min(dt, E.offlineCap);
+  const before = S.photons.clone();
+  const steps = Math.min(2000, Math.max(1, Math.floor(dt)));
+  const step = (dt / steps) * E.offline;
+  for (let i = 0; i < steps; i++) { const e = effects(); tick(step, e); automate(e); }
+  logLine("offline " + fmtTime(dt) + " \u00b7 photons +" + fmt(S.photons.sub(before).max(0)));
+}
+
+function boot() {
+  UI.wave = $("wave");
+  UI.ctx = UI.wave.getContext("2d");
+
+  const stored = localStorage.getItem(SAVE_KEY);
+  if (stored) {
+    try { S = deserialize(stored); catchUp(); }
+    catch (e) { S = newState(); logLine("save unreadable \u00b7 started fresh"); }
+  } else {
+    logLine("listening");
+  }
+
+  buildStatic();
+  UI.paneDirty = true;
+  if (!S.guided) setGuide(true);
+
+  let last = performance.now(), sinceRender = 0, sinceSave = 0;
+  function frame(now) {
+    const dt = Math.min(1, (now - last) / 1000);
+    last = now;
+    const E = effects();
+    tick(dt, E);
+    automate(E);
+
+    sinceRender += dt;
+    if (sinceRender >= 0.1) { sinceRender = 0; render(effects()); }
+    sinceSave += dt;
+    if (sinceSave >= 10) { sinceSave = 0; save(); }
+
+    drawWave(now / 1000, E);
+    requestAnimationFrame(frame);
+  }
+  renderNow();
+  requestAnimationFrame(frame);
+
+  addEventListener("beforeunload", save);
+  addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+}
+boot();
+</script>
+</body>
+</html>
