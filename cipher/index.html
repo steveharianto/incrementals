@@ -1,5 +1,4 @@
 <!doctype html>
-<!-- CIPHER - an incremental idle game you cannot read. Co-authored with CoCo -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -108,16 +107,24 @@ svg.g{width:.66em;height:.95em;vertical-align:-.16em;stroke:currentColor;
 .w{white-space:nowrap;margin-right:.42em;display:inline-block}
 .txt{line-height:2}
 
-/* ---- overlay ---- */
-.ov{position:fixed;inset:0;background:rgba(6,7,8,.93);z-index:50;overflow-y:auto;display:none}
-.ov.show{display:block}
-.ovin{max-width:820px;margin:34px auto;border:1px solid var(--line);background:var(--panel);padding:18px 20px}
-.ovin h1{font-size:13px;letter-spacing:.32em;margin:0 0 4px;font-weight:normal}
-.ovin h2{font-size:11px;letter-spacing:.2em;color:var(--dim);margin:16px 0 6px;font-weight:normal;
-  border-top:1px solid var(--line);padding-top:8px}
-dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 14px}
-dt{color:var(--accent)}
-dd{margin:0;color:var(--dim)}
+/* ---- guided tour: spotlight + card ---- */
+.tb{position:fixed;inset:0;background:rgba(5,6,7,.88);z-index:55;display:none}
+.tb.show{display:block}
+.spot{position:relative;z-index:57;background:var(--panel);
+  outline:1px solid var(--accent);outline-offset:2px}
+.tc{position:fixed;z-index:58;width:340px;max-width:92vw;border:1px solid var(--line-hi);
+  background:var(--panel);padding:10px 11px;display:none;left:20px;top:20px}
+.tc.show{display:block}
+.tc .grp{color:var(--dimmer);font-size:10px;letter-spacing:.2em;margin-bottom:3px}
+.tc h3{margin:0 0 5px;font-size:12px;letter-spacing:.14em;color:var(--accent);font-weight:normal}
+.tc p{margin:0 0 9px;color:var(--dim)}
+.tc .nav{display:flex;gap:5px;align-items:center}
+.tc .nav button{background:none;border:1px solid var(--line);color:var(--dim);font:inherit;
+  padding:1px 8px;cursor:pointer}
+.tc .nav button:hover{border-color:var(--line-hi);color:var(--fg)}
+.tc .nav button[disabled]{color:#2c3033;cursor:default}
+.tc .nav button.pri{border-color:var(--line-hi);color:var(--fg)}
+.tc .dots{margin-left:auto;color:var(--dimmer);font-size:11px}
 textarea{width:100%;height:70px;background:#0a0b0c;color:var(--dim);border:1px solid var(--line);
   font:inherit;font-size:11px;padding:4px;resize:vertical}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -125,7 +132,7 @@ textarea{width:100%;height:70px;background:#0a0b0c;color:var(--dim);border:1px s
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header id="hdr">
     <div class="hrow">
       <div class="brand">CIPHER</div>
       <div class="dimmer" id="hleg">legibility <span id="hlegv">0%</span></div>
@@ -142,7 +149,8 @@ textarea{width:100%;height:70px;background:#0a0b0c;color:var(--dim);border:1px s
     <div id="c3"></div>
   </div>
 </div>
-<div class="ov" id="ov"><div class="ovin" id="ovin"></div></div>
+<div class="tb" id="tb" data-a="tnext"></div>
+<div class="tc" id="tc"></div>
 <script>
 "use strict";
 
@@ -581,6 +589,40 @@ var CANON_TEXT = [
   "The final shelf is empty and labelled. The label is legible.",
   "After the fiftieth passage the archive continues without narration. It always did.",
   "You are reading this in a language you built out of counting. That was the whole method."
+];
+
+
+/* ---- TOUR: the tutorial is a spotlight walk over the real controls.
+   One array entry per step: {t: element id, grp, head, text, pre?}.
+   Adding or reordering a step needs no logic change.                     ---- */
+var TOUR = [
+  { t: "hdr", grp: "START HERE", head: "YOU CANNOT READ THIS",
+    text: "every number and every label on this screen is written in a script nobody has decoded. this bar is how much of it you can read - and it is also your global production multiplier." },
+  { t: "p-ledger", grp: "START HERE", head: "THE LEDGER",
+    text: "your three resources. the thin bar under each fills as you approach the next thing it can buy, so you can judge progress long before you can read the digits." },
+  { t: "allocbox", grp: "START HERE", head: "ALLOCATE, NEVER SPEND",
+    text: "scribes are a pool. top row makes corpus, middle makes analysis, bottom makes context. move them with plus and minus as often as you like - nothing is ever lost by changing your mind." },
+  { t: "buybox", grp: "START HERE", head: "MORE SCRIBES",
+    text: "corpus buys scribes on a steepening curve. the second button takes as many as you can afford in one go." },
+  { t: "p-marks", grp: "THE SCRIPT", head: "THE MARKS",
+    text: "one row per undecoded glyph, with honest statistics: times seen, word-initial %, word-final %, doubled %. the bar on the right is how close it is to resolving on its own, unattended." },
+  { t: "gpick", grp: "THE SCRIPT", head: "GUESSING IS OPTIONAL",
+    text: "select a row, then name a letter for a price in analysis. right resolves it instantly; wrong only slows that one mark for twenty seconds. the ten digits come first and cost nothing to wait for.",
+    pre: function () { for (var i = 0; i < S.res.length; i++) if (!S.res[i]) { S.sel = i; STRUCT_DIRTY = true; return; } } },
+  { t: "p-read", grp: "THE SCRIPT", head: "WHAT YOU KNOW",
+    text: "solved marks collect here. knowledge is per-letter, so half-solved words read like a crossword: g?te is gate." },
+  { t: "p-tech", grp: "THE SCRIPT", head: "COSTS, NOT EFFECTS",
+    text: "an upgrade shows its price and hides what it does. read its label with analysis and buy informed, or buy it blind for " + Math.round(K.BLIND_DISC * 100) + "% off." },
+  { t: "p-log", grp: "THE SCRIPT", head: "THE LOG IS IN THE SCRIPT",
+    text: "nothing here is stored translated. decode one letter and every line you have already been told changes - scroll back in an hour and read what happened to you." },
+  { t: "p-transcribe", grp: "LATER, IN THIS ORDER", head: "TRANSCRIBE",
+    text: "at full legibility: resets this script and its resources, grants lexicon, and deals a new script one tier harder." },
+  { t: "p-lexicon", grp: "LATER, IN THIS ORDER", head: "LEXICON",
+    text: "permanent tooling that survives transcribing. every node is a switch, so the late game is configuring a machine rather than buying a number." },
+  { t: "p-canon", grp: "LATER, IN THIS ORDER", head: "PUBLISH",
+    text: "much later. resets the lexicon for a passage of an authored text and one permanent ability. every ability is a pure gain, so there is nothing here to get wrong." },
+  { t: "p-archive", grp: "GOOD TO KNOW", head: "IDLE AND SAVED",
+    text: "marks resolve whether or not you are watching, and offline time is credited. saving is automatic every ten seconds; export by hand here. the ? in the header reopens this walk." }
 ];
 
 /* ---- TIPS: just-in-time, one line each, fired the moment the mechanic is live ---- */
@@ -1466,41 +1508,41 @@ var TASK_NAMES = { copy: "copy", count: "count", cross: "cross reference" };
 
 function buildUI() {
   $("c1").innerHTML =
-    '<div class="panel"><div class="ptitle">LEDGER<span class="r" id="lfeed"></span></div>' +
+    '<div class="panel" id="p-ledger"><div class="ptitle">LEDGER<span class="r" id="lfeed"></span></div>' +
     resRow("corpus") + resRow("analysis") + resRow("context") +
     '<div class="dimmer" style="margin-top:6px;font-size:11px">incoming</div>' +
     '<div class="txt" id="feed" style="color:var(--dim)"></div></div>' +
 
-    '<div class="panel"><div class="ptitle">SCRIBES<span class="r" id="sctot"></span></div>' +
+    '<div class="panel" id="p-scribes"><div class="ptitle">SCRIBES<span class="r" id="sctot"></span></div>' +
     '<div class="row"><span class="k">unassigned</span><span class="v" id="scun"></span></div>' +
-    allocRow("copy") + allocRow("count") + allocRow("cross") +
-    '<button class="b" data-a="buy1">one more scribe<span class="c" id="cs1"></span></button>' +
-    '<button class="b" data-a="buymax">as many as possible<span class="c" id="csm"></span></button>' +
+    '<div id="allocbox">' + allocRow("copy") + allocRow("count") + allocRow("cross") + '</div>' +
+    '<div id="buybox"><button class="b" data-a="buy1">one more scribe<span class="c" id="cs1"></span></button>' +
+    '<button class="b" data-a="buymax">as many as possible<span class="c" id="csm"></span></button></div>' +
     '</div>';
 
   $("c2").innerHTML =
-    '<div class="panel"><div class="ptitle">MARKS<span class="r" id="mkn"></span></div>' +
+    '<div class="panel" id="p-marks"><div class="ptitle">MARKS<span class="r" id="mkn"></span></div>' +
     '<table class="gt"><thead><tr><th class="l">mark</th><th>seen</th><th>ini</th><th>fin</th>' +
     '<th>dbl</th><th id="thx"></th><th>read</th></tr></thead><tbody id="gtb"></tbody></table>' +
     '<div id="gpick"></div></div>' +
-    '<div class="panel"><div class="ptitle">READ<span class="r" id="rdn"></span></div>' +
+    '<div class="panel" id="p-read"><div class="ptitle">READ<span class="r" id="rdn"></span></div>' +
     '<div class="solved" id="solved"></div></div>';
 
   $("c3").innerHTML =
-    '<div class="panel"><div class="ptitle">TECH<span class="r" id="upn"></span></div>' +
+    '<div class="panel" id="p-tech"><div class="ptitle">TECH<span class="r" id="upn"></span></div>' +
     '<div id="upl"></div></div>' +
-    '<div class="panel"><div class="ptitle">TRANSCRIBE</div>' +
+    '<div class="panel" id="p-transcribe"><div class="ptitle">TRANSCRIBE</div>' +
     '<div class="row"><span class="k">legibility</span><span class="v" id="trleg"></span></div>' +
     '<button class="b" data-a="tr">transcribe this script<span class="c" id="trc"></span></button></div>' +
-    '<div class="panel"><div class="ptitle">LEXICON<span class="r" id="lxn"></span></div>' +
+    '<div class="panel" id="p-lexicon"><div class="ptitle">LEXICON<span class="r" id="lxn"></span></div>' +
     '<div id="lxl"></div></div>' +
-    '<div class="panel"><div class="ptitle">CANON<span class="r" id="cnn"></span></div>' +
+    '<div class="panel" id="p-canon"><div class="ptitle">CANON<span class="r" id="cnn"></span></div>' +
     '<div class="row"><span class="k">lifetime lexicon</span><span class="v" id="pubv"></span></div>' +
     '<div class="bar" id="pubb"><i></i></div>' +
     '<button class="b" data-a="pub">publish<span class="c" id="pubc"></span></button>' +
     '<div id="cnl" class="dimtxt" style="margin-top:5px;font-size:12px"></div></div>' +
-    '<div class="panel"><div class="ptitle">LOG</div><div class="log" id="log"></div></div>' +
-    '<div class="panel"><div class="ptitle">ARCHIVE<span class="r" id="arv"></span></div>' +
+    '<div class="panel" id="p-log"><div class="ptitle">LOG</div><div class="log" id="log"></div></div>' +
+    '<div class="panel" id="p-archive"><div class="ptitle">ARCHIVE<span class="r" id="arv"></span></div>' +
     '<div class="two"><button class="b" data-a="exp">export</button><button class="b" data-a="dl">download</button></div>' +
     '<textarea id="sav" spellcheck="false" placeholder="paste a save here"></textarea>' +
     '<div class="two"><button class="b" data-a="imp">import</button><button class="b" data-a="reset">hard reset</button></div></div>';
@@ -1758,34 +1800,69 @@ function updateTip() {
 }
 function safeWhen(t) { try { return !!t.when(); } catch (e) { return false; } }
 
-/* ---------------- tutorial overlay ---------------------------------------- */
-var HELP =
-  '<h1>CIPHER</h1><div class="dimtxt">You cannot read your own numbers. Every label, every ' +
-  'upgrade name and every digit on this screen is written in a script nobody has decoded. ' +
-  'Fixing that is the first job, and it takes about a minute and a half.</div>' +
-  '<h2>START HERE</h2><dl>' +
-  '<dt>scribes</dt><dd>a pool you allocate, never spend. move them between the three tasks freely and as often as you like.</dd>' +
-  '<dt>the three tasks</dt><dd>top to bottom: copy makes corpus, count makes analysis, cross-reference makes context. the rate beside each one tells you which is which.</dd>' +
-  '<dt>marks</dt><dd>each undecoded glyph shows honest statistics: times seen, word-initial %, word-final %, doubled %. the bar on the right is how close it is to resolving on its own.</dd>' +
-  '<dt>guessing</dt><dd>optional. select a mark, spend analysis, name a letter. right resolves it instantly; wrong only slows that one mark for twenty seconds.</dd>' +
-  '</dl><h2>THE SCRIPT</h2><dl>' +
-  '<dt>substitution</dt><dd>one mark, one letter. knowledge is per-letter, so half-decoded words read like a crossword: g?te is gate.</dd>' +
-  '<dt>digits first</dt><dd>the ten numerals resolve far faster than letters. once they land, your numbers come back.</dd>' +
-  '<dt>legibility</dt><dd>the fraction of the script you can read. it is also the global production multiplier: understanding your own notes makes every process faster.</dd>' +
-  '<dt>the log</dt><dd>stored in the script, not in translation. decode a letter and everything you have already been told changes. scroll back.</dd>' +
-  '</dl><h2>LATER, IN THIS ORDER</h2><dl>' +
-  '<dt>tech</dt><dd>an upgrade shows its cost, never its effect. read its label with analysis and buy informed, or buy blind for 40% off.</dd>' +
-  '<dt>transcribe</dt><dd>at 100% legibility: resets this script and its resources, grants lexicon, and deals a new script one tier harder.</dd>' +
-  '<dt>lexicon</dt><dd>permanent tooling, kept through transcribing. every node is a switch, so the late game is configuring a machine.</dd>' +
-  '<dt>publish</dt><dd>much later. resets the lexicon for a passage of an authored text and one permanent ability. every ability is a pure gain.</dd>' +
-  '</dl><h2>GOOD TO KNOW</h2><dl>' +
-  '<dt>idle</dt><dd>marks resolve whether or not you are watching, and offline time is credited.</dd>' +
-  '<dt>harder hands</dt><dd>later scripts add homophones, nulls, ligatures and positional forms, in that order.</dd>' +
-  '<dt>saving</dt><dd>automatic every ten seconds, locally. export and import by hand from the archive panel.</dd>' +
-  '<dt>closing</dt><dd>escape, or the ? in the header.</dd>' +
-  '</dl><button class="b" data-a="close" style="margin-top:14px">close</button>';
+/* ---------------- guided tour: spotlight the real controls --------------- */
+var TOUR_I = -1, TOUR_EL = null;
 
-function showHelp(on) { $("ov").classList[on ? "add" : "remove"]("show"); }
+function tourOn() { return TOUR_I >= 0; }
+function tourStart() { TOUR_I = -1; tourGo(0); }
+function tourGo(i) {
+  if (i >= TOUR.length) { tourEnd(); return; }
+  if (i < 0) i = 0;
+  TOUR_I = i;
+  var st = TOUR[i];
+  if (st.pre) { try { st.pre(); } catch (e) {} }
+  if (STRUCT_DIRTY) updateUI();
+  var el = $(st.t);
+  if (TOUR_EL && TOUR_EL !== el) TOUR_EL.classList.remove("spot");
+  TOUR_EL = el;
+  if (el) {
+    el.classList.add("spot");
+    if (el.scrollIntoView) {
+      try { el.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) { el.scrollIntoView(); }
+    }
+  }
+  $("tb").classList.add("show");
+  var c = $("tc");
+  c.innerHTML =
+    '<div class="grp">' + esc(st.grp) + "</div>" +
+    "<h3>" + esc(st.head) + "</h3>" +
+    "<p>" + esc(st.text) + "</p>" +
+    '<div class="nav">' +
+    '<button data-a="tprev"' + (i === 0 ? " disabled" : "") + ">back</button>" +
+    '<button data-a="tnext" class="pri">' + (i === TOUR.length - 1 ? "done" : "next") + "</button>" +
+    '<button data-a="tdone">skip</button>' +
+    '<span class="dots">' + (i + 1) + " / " + TOUR.length + "</span></div>";
+  c.classList.add("show");
+  tourPos(el);
+}
+function tourEnd() {
+  if (TOUR_EL) TOUR_EL.classList.remove("spot");
+  TOUR_EL = null; TOUR_I = -1;
+  $("tb").classList.remove("show");
+  $("tc").classList.remove("show");
+}
+/* place the card beside the highlighted element, clamped to the viewport */
+function tourPos(el) {
+  var c = $("tc");
+  if (!c.style) return;
+  var vw = typeof window !== "undefined" && window.innerWidth ? window.innerWidth : 1200;
+  var vh = typeof window !== "undefined" && window.innerHeight ? window.innerHeight : 800;
+  var cw = c.offsetWidth || 340, ch = c.offsetHeight || 150;
+  var r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  if (!r || (!r.width && !r.height)) {
+    c.style.left = Math.max(8, (vw - cw) / 2) + "px";
+    c.style.top = Math.max(8, (vh - ch) / 2) + "px";
+    return;
+  }
+  var left = r.left, top = r.bottom + 10;
+  if (top + ch > vh - 8) top = r.top - ch - 10;
+  if (top < 8) top = Math.min(vh - ch - 8, r.bottom + 10);
+  if (top < 8) top = 8;
+  if (left + cw > vw - 8) left = vw - cw - 8;
+  if (left < 8) left = 8;
+  c.style.left = left + "px";
+  c.style.top = top + "px";
+}
 
 /* ---------------- events -------------------------------------------------- */
 function wire() {
@@ -1813,12 +1890,18 @@ function wire() {
     else if (act === "dl") doDownload();
     else if (act === "imp") doImport();
     else if (act === "reset") doReset(a);
-    else if (act === "close") showHelp(false);
+    else if (act === "tnext") { tourGo(TOUR_I + 1); return; }
+    else if (act === "tprev") { tourGo(TOUR_I - 1); return; }
+    else if (act === "tdone") { tourEnd(); }
     updateUI();
   });
-  $("bhelp").addEventListener("click", function () { showHelp(true); });
-  $("ov").addEventListener("click", function (e) { if (e.target === $("ov")) showHelp(false); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") showHelp(false); });
+  $("bhelp").addEventListener("click", function () { tourStart(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") tourEnd();
+    else if (tourOn() && (e.key === "ArrowRight" || e.key === "Enter")) tourGo(TOUR_I + 1);
+    else if (tourOn() && e.key === "ArrowLeft") tourGo(TOUR_I - 1);
+  });
+  window.addEventListener("resize", function () { if (tourOn()) tourPos(TOUR_EL); });
 }
 
 /* ============================================================================
@@ -1908,8 +1991,7 @@ function boot() {
   FEED = genLine(1234);
   catchUp();
   buildUI();
-  $("ovin").innerHTML = HELP;
-  if (FIRST_RUN) showHelp(true);
+  if (FIRST_RUN) tourStart();
   lastT = now(); uiT = 0; saveT = now();
   updateUI();
   document.addEventListener("visibilitychange", save);
@@ -1938,7 +2020,8 @@ var CIPHER_API = {
   ser: ser, deser: deser, save: save, load: load, offlineApply: offlineApply,
   subCriticalCheck: subCriticalCheck, upgSubCritical: upgSubCritical,
   fmt: fmt, numHTML: numHTML, digitsDone: digitsDone, countResolvedLetters: countResolvedLetters,
-  buildUI: buildUI, updateUI: updateUI, boot: boot, setS: function (x) { S = x; }
+  buildUI: buildUI, updateUI: updateUI, boot: boot,
+  TOUR: TOUR, tourStart: tourStart, tourGo: tourGo, tourEnd: tourEnd, tourOn: tourOn, setS: function (x) { S = x; }
 };
 if (typeof window !== "undefined") window.CIPHER = CIPHER_API;
 if (typeof module !== "undefined" && module.exports) module.exports = CIPHER_API;
