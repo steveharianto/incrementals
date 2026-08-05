@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<!-- NEONFLUX - an incremental pinball machine. Co-authored with CoCo -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="snowflake-source" content="cortex-agent-authored" />
+<title>NEONFLUX // Incremental Pinball</title>
+<script type="application/json" id="snowflake-report-metadata">
+{
+  "generated": "2026-08-05",
+  "intent": "Self-contained incremental/idle game: a physics-driven pinball table where the player buys upgrades that literally add geometry to the canvas. No external data sources.",
+  "dataSources": [],
+  "sections": [
+    { "id": "table", "title": "Physics table (canvas)",
+      "dataSources": [],
+      "producerNotes": "All state is client-side. Persistence uses localStorage key 'neonflux_save_v1' wrapped in try/catch so the page degrades to session-only storage inside sandboxed renderers. Offline progress is granted from an EMA of score/sec, not by simulating physics." },
+    { "id": "panel", "title": "Upgrade panels",
+      "dataSources": [],
+      "producerNotes": "Upgrade definitions live in the UPG array; costs are base*growth^level. Meta perks live in META and are bought with Tokens from the NEW MACHINE prestige." }
+  ]
+}
+</script>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#05060c; --bg2:#0a0d1a; --line:#1b2340;
+    --ink:#c8d4ff; --dim:#6b7aa8; --hot:#ff3d81; --cy:#31e8ff; --ye:#ffd23f;
+    --gr:#3dffa2; --vi:#a56bff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 800px at 50% -10%, #141a35 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:13px; overflow:hidden;
+  }
+  #wrap{display:flex; height:100vh; gap:10px; padding:10px; align-items:stretch}
+  #left{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; gap:8px}
+  #right{flex:0 0 366px; display:flex; flex-direction:column; min-width:0}
+
+  /* ---------- HUD ---------- */
+  #hud{display:flex; gap:8px; flex-wrap:wrap; align-items:stretch}
+  .stat{
+    flex:1 1 0; min-width:96px; background:linear-gradient(180deg,#0d1226,#080b16);
+    border:1px solid var(--line); border-radius:6px; padding:6px 9px;
+  }
+  .stat .k{font-size:9px; letter-spacing:.14em; color:var(--dim)}
+  .stat .v{font-size:17px; font-weight:700; margin-top:1px; text-shadow:0 0 12px currentColor}
+  .stat .s{font-size:9px; color:var(--dim); margin-top:1px}
+  .c-sc{color:var(--cy)} .c-ch{color:var(--ye)} .c-fl{color:var(--hot)} .c-tk{color:var(--vi)}
+
+  /* ---------- table ---------- */
+  #stage{
+    flex:1 1 auto; position:relative; display:flex; align-items:center; justify-content:center;
+    background:#03040a; border:1px solid var(--line); border-radius:8px; overflow:hidden; min-height:0;
+  }
+  #table{display:block; max-width:100%; max-height:100%; cursor:crosshair; touch-action:none}
+  #flowbar{
+    position:absolute; left:0; right:0; bottom:0; height:3px; background:#0c1020;
+  }
+  #flowfill{height:100%; width:0%; background:linear-gradient(90deg,var(--cy),var(--hot),var(--ye)); box-shadow:0 0 10px var(--hot)}
+  #tips{
+    position:absolute; top:8px; left:10px; font-size:10px; color:#4d5a86; line-height:1.55;
+    pointer-events:none; text-shadow:0 0 6px #000;
+  }
+
+  /* ---------- panel ---------- */
+  #tabs{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px}
+  .tab{
+    flex:1 1 auto; padding:6px 4px; font-size:9.5px; letter-spacing:.08em; text-align:center;
+    background:#0b0f1e; border:1px solid var(--line); border-radius:5px; color:var(--dim);
+    cursor:pointer; user-select:none; white-space:nowrap;
+  }
+  .tab:hover{color:var(--ink); border-color:#2c3861}
+  .tab.on{background:#16204a; color:#fff; border-color:#3f5199; box-shadow:0 0 12px #2b3a7a inset}
+  .tab .badge{display:inline-block; margin-left:3px; color:var(--gr)}
+
+  #panel{
+    flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding-right:4px; min-height:0;
+    background:linear-gradient(180deg,#080b16,#05070f);
+    border:1px solid var(--line); border-radius:8px; padding:9px;
+  }
+  #panel::-webkit-scrollbar{width:8px}
+  #panel::-webkit-scrollbar-thumb{background:#1e2748; border-radius:4px}
+  .hint{font-size:10.5px; color:var(--dim); line-height:1.6; margin:0 0 9px}
+  .hint b{color:var(--ink)}
+
+  .row{
+    display:block; width:100%; text-align:left; margin-bottom:6px; padding:7px 9px;
+    background:#0c1122; border:1px solid #1a2340; border-left:2px solid #2a3560;
+    border-radius:5px; color:var(--ink); font:inherit; cursor:pointer; position:relative;
+  }
+  .row:hover:not(.no){background:#131a33; border-color:#31406f}
+  .row.no{opacity:.42; cursor:not-allowed}
+  .row.max{opacity:.62; cursor:default; border-left-color:var(--gr)}
+  .row .t{display:flex; justify-content:space-between; gap:8px; align-items:baseline}
+  .row .n{font-size:11.5px; font-weight:700; letter-spacing:.03em}
+  .row .lv{font-size:9.5px; color:var(--dim); flex:0 0 auto}
+  .row .d{font-size:10px; color:var(--dim); margin-top:3px; line-height:1.5}
+  .row .cost{font-size:10.5px; font-weight:700; margin-top:4px}
+  .row .eff{color:var(--gr)}
+  .row.sc{border-left-color:var(--cy)} .row.ch{border-left-color:var(--ye)}
+  .row.tk{border-left-color:var(--vi)}
+  .cst-sc{color:var(--cy)} .cst-ch{color:var(--ye)} .cst-tk{color:var(--vi)}
+
+  .sect{font-size:9px; letter-spacing:.16em; color:var(--dim); margin:12px 0 6px; border-bottom:1px solid var(--line); padding-bottom:3px}
+  .sect:first-child{margin-top:0}
+
+  button.big{
+    display:block; width:100%; padding:10px; margin-bottom:8px; font:inherit; font-weight:700;
+    letter-spacing:.06em; background:#1a1030; color:var(--vi); border:1px solid #4a2f8a;
+    border-radius:6px; cursor:pointer; text-shadow:0 0 10px currentColor;
+  }
+  button.big:hover:not(:disabled){background:#241544; box-shadow:0 0 18px #3a2170}
+  button.big:disabled{opacity:.4; cursor:not-allowed; text-shadow:none}
+  button.mini{
+    padding:6px 9px; font:inherit; font-size:10.5px; background:#0f1528; color:var(--ink);
+    border:1px solid #253158; border-radius:5px; cursor:pointer; margin:0 5px 5px 0;
+  }
+  button.mini:hover{background:#182242; border-color:#39487d}
+  textarea{
+    width:100%; height:150px; background:#04060d; color:var(--gr); border:1px solid var(--line);
+    border-radius:5px; font:inherit; font-size:9.5px; padding:7px; resize:vertical;
+  }
+  .warn{font-size:10px; color:var(--ye); line-height:1.55; margin:6px 0}
+  .kv{display:flex; justify-content:space-between; font-size:10.5px; padding:3px 0; border-bottom:1px solid #121933}
+  .kv span:last-child{color:#fff; font-weight:700}
+
+  /* ---------- modal ---------- */
+  #modal{
+    position:fixed; inset:0; background:rgba(2,3,8,.86); display:none;
+    align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  #modal.on{display:flex}
+  #mbox{
+    max-width:440px; width:100%;
+    background:linear-gradient(180deg,#0e1226,#070a14);
+    border:1px solid #33406e; border-radius:10px; padding:20px;
+    box-shadow:0 0 60px #0d143a;
+  }
+  #mbox h2{margin:0 0 10px; font-size:15px; letter-spacing:.1em; color:var(--cy); text-shadow:0 0 14px currentColor}
+  #mbody{font-size:11.5px; line-height:1.7; color:var(--dim)}
+  #mbody b{color:#fff}
+
+  #toast{
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+    background:#111a36; border:1px solid #3a4a80; border-radius:6px; padding:8px 16px;
+    font-size:11px; color:#fff; opacity:0; transition:opacity .25s; pointer-events:none; z-index:60;
+    box-shadow:0 0 24px #16224d;
+  }
+  #toast.on{opacity:1}
+
+  @media (max-width:940px){
+    #wrap{flex-direction:column; overflow-y:auto; height:auto; min-height:100vh}
+    body{overflow:auto}
+    #right{flex:1 1 auto; width:100%}
+    #stage{min-height:60vh}
+    #panel{max-height:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <div id="left">
+    <div id="hud">
+      <div class="stat"><div class="k">SCORE</div><div class="v c-sc" id="h-score">0</div><div class="s" id="h-rate">0 / sec</div></div>
+      <div class="stat"><div class="k">CHROME</div><div class="v c-ch" id="h-chrome">0</div><div class="s" id="h-chsub">structural</div></div>
+      <div class="stat"><div class="k">FLOW</div><div class="v c-fl" id="h-flow">x1.0</div><div class="s" id="h-flowsub">cap x4</div></div>
+      <div class="stat"><div class="k">BALLS</div><div class="v" id="h-balls">0</div><div class="s" id="h-mach">Cabinet Mk I</div></div>
+      <div class="stat"><div class="k">TOKENS</div><div class="v c-tk" id="h-tokens">0</div><div class="s" id="h-life">lifetime 0</div></div>
+    </div>
+    <div id="stage">
+      <canvas id="table" width="600" height="900"></canvas>
+      <div id="tips">
+        CLICK bumper &rarr; overcharge &nbsp;|&nbsp; CLICK ball &rarr; flick<br>
+        SPACE &rarr; feed ball &nbsp;|&nbsp; FLOW rises when you hit a <i>different</i> target
+      </div>
+      <div id="flowbar"><div id="flowfill"></div></div>
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="tabs">
+      <div class="tab on" data-tab="kin">KINETICS</div>
+      <div class="tab" data-tab="vol">VOLTAGE</div>
+      <div class="tab" data-tab="arc">ARCH</div>
+      <div class="tab" data-tab="aut">AUTO</div>
+      <div class="tab" data-tab="pre">MACHINE</div>
+      <div class="tab" data-tab="sav">DATA</div>
+    </div>
+    <div id="panel"></div>
+  </div>
+</div>
+
+<div id="modal"><div id="mbox">
+  <h2 id="mtitle">—</h2>
+  <div id="mbody"></div>
+  <div style="margin-top:16px"><button class="mini" id="mclose">CONTINUE</button></div>
+</div></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+
+/* =========================================================================
+   0. CONSTANTS / TABLE GEOMETRY
+   ========================================================================= */
+const TW = 600, TH = 900;            // table space (all physics in these units)
+const SAVE_KEY = 'neonflux_save_v1';
+const SAVE_VER = 1;
+const GRAV = 780;                    // px / s^2 base
+const VMAX = 1500;
+const DT   = 1/120;                  // fixed physics step
+const MAXSUB = 6;
+
+const SUF = ['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','Ud','Dd','Td'];
+
+// static wall segments  [ax, ay, bx, by]
+const WALLS = [
+  [90,20, 510,20],      // top
+  [20,90, 90,20],       // top-left chamfer
+  [580,90, 510,20],     // top-right chamfer
+  [20,90, 20,762],      // left
+  [580,90, 580,762],    // right
+  [20,762, 214,852],    // left inlane
+  [580,762, 386,852],   // right inlane
+  [172,88, 172,142],    // lane dividers
+  [228,88, 228,142],
+  [372,88, 372,142],
+  [428,88, 428,142]
+];
+
+// anchor slots — architecture upgrades fill these in order.
+// The first four are deliberately in the spawn fall-path so the early game can actually score.
+const A_BUMP = [[300,296],[228,392],[372,392],[300,470],[140,300],[460,300],
+                [210,560],[390,560],[300,624],[118,468],[482,468],[300,192]];
+const A_SPIN = [[150,192],[450,192],[300,700]];
+const A_RAMP = [[62,662],[538,662],[300,752]];
+const A_TARG = [[300,540],[462,652]];
+const A_MAGN = [[196,468],[404,468]];
+const A_SAUC = [520,600];
+const LANES  = [[200,112],[300,112],[400,112]];
+const LANE_W = 54, LANE_H = 48;
+
+// Slingshots: always present, free. These are what keep a real pinball alive in
+// the midfield instead of dribbling straight down into the drain.
+const SLING = [
+  {ax:128, ay:684, bx:206, by:750, hue:12},
+  {ax:472, ay:684, bx:394, by:750, hue:12}
+];
+
+const FLIP = {
+  L:{px:214, py:852, len:84, rest: 0.56, fire:-0.50},
+  R:{px:386, py:852, len:84, rest: Math.PI-0.56, fire: Math.PI+0.50}
+};
+
+/* =========================================================================
+   1. UPGRADE DEFINITIONS
+   ========================================================================= */
+// cur: 's' = score, 'c' = chrome ;  max = level cap
+const UPG = [
+  // ---- KINETICS (score) : physics of the ball ----
+  {id:'ballCount',  tab:'kin', cur:'s', name:'BALL SLOT',        base:30,   g:2.35, max:19,
+   d:'Another ball allowed on the table at once. More balls = more collisions = more everything.',
+   e:c=>'max '+c.maxBalls+' balls'},
+  {id:'plunger',    tab:'kin', cur:'s', name:'FEEDER SPRING',    base:45,   g:1.52, max:22,
+   d:'The auto-feeder drops replacement balls faster.',
+   e:c=>'every '+c.feedInt.toFixed(2)+'s'},
+  {id:'bounce',     tab:'kin', cur:'s', name:'ELASTICITY',       base:90,   g:1.44, max:15,
+   d:'Balls retain more energy per impact. High elasticity keeps rallies alive far longer.',
+   e:c=>'restitution '+c.rest.toFixed(3)},
+  {id:'speed',      tab:'kin', cur:'s', name:'KICK FORCE',       base:120,  g:1.33, max:40,
+   d:'Every bumper shoves harder, so balls travel further between hits.',
+   e:c=>'+'+((c.kick-1)*100).toFixed(0)+'% impulse'},
+  {id:'gravity',    tab:'kin', cur:'s', name:'FIELD TENSION',    base:260,  g:1.40, max:22,
+   d:'Steepens the table. Faster fall, denser action, shorter ball life.',
+   e:c=>'gravity x'+c.grav.toFixed(2)},
+  {id:'mass',       tab:'kin', cur:'s', name:'TUNGSTEN CORE',    base:600,  g:1.46, num:1, max:30,
+   d:'Denser balls transfer more energy into every target they strike.',
+   e:c=>'+'+((c.massB-1)*100).toFixed(0)+'% target value'},
+
+  // ---- VOLTAGE (score) : value of each hit ----
+  {id:'value',      tab:'vol', cur:'s', name:'COIL VOLTAGE',     base:18,   g:1.29, max:200,
+   d:'Raises the base point value of every target on the table.',
+   e:c=>'base '+fmt(c.base)+' / hit'},
+  {id:'flowGain',   tab:'vol', cur:'s', name:'FLOW INDUCTOR',    base:150,  g:1.55, max:35,
+   d:'FLOW climbs faster each time a ball strikes a target it did not just hit.',
+   e:c=>'+'+c.flowGain.toFixed(2)+' FLOW / new target'},
+  {id:'flowCap',    tab:'vol', cur:'s', name:'FLOW CEILING',     base:400,  g:1.72, max:30,
+   d:'Raises the maximum FLOW multiplier the table can sustain.',
+   e:c=>'cap x'+c.flowCap.toFixed(0)},
+  {id:'decay',      tab:'vol', cur:'s', name:'CAPACITOR BANK',   base:320,  g:1.58, max:18,
+   d:'FLOW bleeds away more slowly during quiet moments.',
+   e:c=>'-'+c.flowDecay.toFixed(2)+' FLOW / sec idle'},
+  {id:'critC',      tab:'vol', cur:'s', name:'ARC PROBABILITY',  base:900,  g:1.62, max:22,
+   d:'Chance for a hit to ARC for massively increased points.',
+   e:c=>(c.crit*100).toFixed(0)+'% arc chance'},
+  {id:'critM',      tab:'vol', cur:'s', name:'ARC AMPLITUDE',    base:1400, g:1.66, max:24,
+   d:'Arcing hits pay out far more.',
+   e:c=>'arc x'+c.critM.toFixed(1)},
+  {id:'charge',     tab:'vol', cur:'s', name:'CHARGE INJECTOR',  base:5000, g:1.95, max:6,
+   d:'Bumpers need fewer hits before they POP for a burst payout.',
+   e:c=>'pop at '+c.chargeMax+' hits'},
+  {id:'burst',      tab:'vol', cur:'s', name:'BURST YIELD',      base:8000, g:1.78, max:30,
+   d:'A bumper POP pays out a bigger multiple of its value.',
+   e:c=>'pop x'+c.burst.toFixed(0)},
+
+  // ---- ARCHITECTURE (chrome) : real geometry on the table ----
+  {id:'bumper',     tab:'arc', cur:'c', name:'POP BUMPER',       base:2,   g:1.62, max:9,
+   d:'Bolts another pop bumper into a free anchor slot. The core scoring object.',
+   e:c=>c.nBump+' bumpers on table'},
+  {id:'spinner',    tab:'arc', cur:'c', name:'SPINNER',          base:8,   g:3.1,  max:3,
+   d:'A spinning gate that pays per revolution and accelerates the ball through it.',
+   e:c=>c.nSpin+' spinners'},
+  {id:'ramp',       tab:'arc', cur:'c', name:'RETURN RAMP',      base:14,  g:3.4,  max:3,
+   d:'Flings balls from the lower table back up to the top lanes. The engine of FLOW and of jackpots.',
+   e:c=>c.nRamp+' ramps'},
+  {id:'target',     tab:'arc', cur:'c', name:'DROP TARGET BANK', base:26,  g:4.0,  max:2,
+   d:'Three drop targets. Knock all three down for a bank bonus, then they reset.',
+   e:c=>c.nTarg+' banks'},
+  {id:'magnet',     tab:'arc', cur:'c', name:'ELECTROMAGNET',    base:40,  g:4.4,  max:2,
+   d:'Drags nearby balls into the dense bumper cluster, producing long orbital rallies.',
+   e:c=>c.nMagn+' magnets'},
+  {id:'kickback',   tab:'arc', cur:'c', name:'KICKBACK',         base:60,  g:4.6,  max:2,
+   d:'A charged gate in the drain that catapults a dying ball back into play for free.',
+   e:c=>c.nKick+' kickbacks ('+c.kickCap.toFixed(0)+' charges)'},
+  {id:'saucer',     tab:'arc', cur:'c', name:'MULTIBALL SAUCER', base:110, g:5.0,  max:1,
+   d:'Captures a ball, holds it, then erupts with three.',
+   e:c=>c.nSauc? 'installed' : 'not installed'},
+  {id:'laneVal',    tab:'arc', cur:'c', name:'LANE BANK',        base:5,   g:1.85, max:25,
+   d:'Completing all three top lanes is a JACKPOT. This raises the Chrome it pays.',
+   e:c=>'jackpot '+c.jackChrome.toFixed(1)+' chrome'},
+
+  // ---- AUTOMATION (chrome) ----
+  {id:'flipReach',  tab:'aut', cur:'c', name:'FLIPPER SENSORS',  base:3,   g:1.7,  max:14,
+   d:'Auto-flippers detect approaching balls from further away and fire more reliably.',
+   e:c=>'reach '+c.flipReach.toFixed(0)+'px'},
+  {id:'flipPow',    tab:'aut', cur:'c', name:'FLIPPER SOLENOID', base:4,   g:1.75, max:20,
+   d:'Auto-flippers hit harder, launching balls deeper into the table.',
+   e:c=>'power x'+c.flipPow.toFixed(2)},
+  {id:'refinery',   tab:'aut', cur:'c', name:'SHARD REFINERY',   base:6,   g:1.72, max:25,
+   d:'DRAIN MARKET: a draining ball converts its accumulated momentum into Chrome. This refines more of it.',
+   e:c=>'x'+c.drainMul.toFixed(2)+' shards on drain'},
+  {id:'recycler',   tab:'aut', cur:'c', name:'BALL RECYCLER',    base:18,  g:2.2,  max:9,
+   d:'Chance a drained ball is instantly re-fed without waiting for the feeder.',
+   e:c=>(c.recycle*100).toFixed(0)+'% instant return'},
+  {id:'offEff',     tab:'aut', cur:'c', name:'GHOST OPERATOR',   base:10,  g:1.9,  max:10,
+   d:'The table keeps earning while the page is closed. Raises offline efficiency.',
+   e:c=>(c.offEff*100).toFixed(0)+'% offline rate'},
+  {id:'offCap',     tab:'aut', cur:'c', name:'FLYWHEEL STORE',   base:14,  g:2.0,  max:10,
+   d:'Extends how many hours of offline earnings the machine can bank.',
+   e:c=>(c.offCap/3600).toFixed(0)+'h offline cap'},
+  {id:'autobuy',    tab:'aut', cur:'c', name:'AUTO-TUNER',       base:150, g:1,    max:1,
+   d:'Unlocks AUTO-BUY, which continuously purchases the cheapest affordable Score upgrade.',
+   e:c=>c.autobuy? 'unlocked' : 'locked'}
+];
+
+// meta perks, bought with Tokens, survive prestige
+const META = [
+  {id:'gMult',   name:'RESONANT CHASSIS',  base:1,  g:2.0,  max:60,
+   d:'Permanent global score multiplier on every machine you ever build.',
+   e:m=>'x'+fmt(Math.pow(1.3, m.gMult))+' all score'},
+  {id:'startCh', name:'PARTS BIN',         base:2,  g:1.9,  max:30,
+   d:'Begin each new machine with Chrome already in hand.',
+   e:m=>'start with '+(m.startCh*3)+' chrome'},
+  {id:'ballSlot',name:'SPARE BALLS',       base:3,  g:2.6,  max:8,
+   d:'Every new machine starts with extra ball slots.',
+   e:m=>'+'+m.ballSlot+' starting balls'},
+  {id:'keepKin', name:'MUSCLE MEMORY',     base:5,  g:6.0,  max:3,
+   d:'Retain a portion of your KINETICS levels through a machine swap.',
+   e:m=>'keep '+(m.keepKin*20)+'% of kinetics'},
+  {id:'flowSeed',name:'STANDING WAVE',     base:4,  g:3.2,  max:10,
+   d:'FLOW never decays below a floor, so a fresh table is never truly cold.',
+   e:m=>'FLOW floor x'+(1+m.flowSeed*0.5).toFixed(1)},
+  {id:'offBoost',name:'NIGHT SHIFT',       base:6,  g:3.0,  max:10,
+   d:'Adds flat offline efficiency on top of GHOST OPERATOR.',
+   e:m=>'+'+(m.offBoost*5)+'% offline'},
+  {id:'tokGain', name:'COIN MECHANISM',    base:10, g:4.0,  max:15,
+   d:'Every future machine swap yields more Tokens.',
+   e:m=>'+'+(m.tokGain*10)+'% tokens'}
+];
+
+const CAB = ['Mk I','Mk II','Mk III','Mk IV','Mk V','Mk VI','Mk VII','Mk VIII','Mk IX','Mk X',
+             'Mk XI','Mk XII','Mk XIII','Mk XIV','Mk XV'];
+
+/* =========================================================================
+   2. STATE
+   ========================================================================= */
+let G;   // whole game state
+
+function freshRun(meta){
+  const lvl = {};
+  for(const u of UPG) lvl[u.id] = 0;
+  return {
+    score: 0, chrome: (meta.startCh||0) * 3,
+    lvl: lvl,
+    flow: 1, lastTarget: -1, flowIdle: 0,
+    lanes: [false,false,false],
+    seed: (Math.random()*1e9)|0,
+    kickCharge: 0,
+    rateEMA: 0, t0: Date.now(),
+    jackpots: 0, pops: 0, hits: 0, drains: 0
+  };
+}
+function freshMeta(){
+  const m = {tokens:0, machines:0, lifetime:0, best:0};
+  for(const p of META) m[p.id] = 0;
+  return m;
+}
+function newGame(){
+  const meta = freshMeta();
+  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false}};
+  derive(); buildTable(); G.balls = []; feed(); 
+}
+
+/* ---- derived stats ---------------------------------------------------- */
+let C = {};
+function derive(){
+  const L = G.run.lvl, M = G.meta;
+  C.maxBalls   = 1 + L.ballCount + M.ballSlot;
+  C.feedInt    = 3.4 / (1 + 0.15*L.plunger);
+  C.rest       = Math.min(0.988, 0.855 + 0.0088*L.bounce);
+  C.kick       = 1 + 0.055*L.speed;
+  C.grav       = 1 + 0.035*L.gravity;
+  C.massB      = 1 + 0.055*L.mass;
+  C.gMult      = Math.pow(1.3, M.gMult);
+  C.base       = Math.pow(1.29, L.value) * C.massB * C.gMult;
+  C.flowGain   = 0.17 + 0.045*L.flowGain;
+  C.flowCap    = 4 + 2*L.flowCap;
+  C.flowFloor  = 1 + M.flowSeed*0.5;
+  C.flowDecay  = 0.85 * Math.pow(0.90, L.decay);
+  C.crit       = Math.min(0.75, 0.02*L.critC);
+  C.critM      = 3 + 0.55*L.critM;
+  C.chargeMax  = Math.max(3, 8 - L.charge);
+  C.burst      = 6 + 2.6*L.burst;
+  C.nBump      = 4 + L.bumper;
+  C.nSpin      = L.spinner; C.nRamp = L.ramp; C.nTarg = L.target;
+  C.nMagn      = L.magnet;  C.nKick = L.kickback; C.nSauc = L.saucer;
+  C.kickCap    = L.kickback * 2;
+  C.jackChrome = 1 + 0.65*L.laneVal;
+  C.flipReach  = 92 + 20*L.flipReach;
+  C.flipPow    = 1 + 0.13*L.flipPow;
+  C.drainMul   = 1 + 0.30*L.refinery;
+  C.recycle    = Math.min(0.92, 0.09*L.recycler);
+  C.offEff     = Math.min(1, 0.35 + 0.065*L.offEff + 0.05*M.offBoost);
+  C.offCap     = (2 + L.offCap) * 3600;
+  C.autobuy    = L.autobuy > 0;
+}
+function cost(u){
+  const n = G.run.lvl[u.id];
+  return Math.ceil(u.base * Math.pow(u.g, n));
+}
+function mcost(p){
+  const n = G.meta[p.id];
+  return Math.ceil(p.base * Math.pow(p.g, n));
+}
+
+/* =========================================================================
+   3. TABLE CONSTRUCTION  (architecture upgrades -> real colliders)
+   ========================================================================= */
+let T;   // table objects
+function rng(seed){ let s = seed>>>0 || 1; return ()=>{ s^=s<<13; s>>>=0; s^=s>>17; s^=s<<5; s>>>=0; return s/4294967296; }; }
+
+function buildTable(){
+  const r = rng(G.run.seed);
+  const j = (v,a)=> v + (r()*2-1)*a;
+  T = {bumpers:[], spinners:[], ramps:[], targets:[], magnets:[], saucer:null,
+       flipL:{a:FLIP.L.rest, pa:FLIP.L.rest, om:0, cd:0},
+       flipR:{a:FLIP.R.rest, pa:FLIP.R.rest, om:0, cd:0}};
+
+  const hues = [188, 320, 48, 150, 268, 12];
+  for(let i=0;i<Math.min(C.nBump, A_BUMP.length);i++){
+    T.bumpers.push({x:j(A_BUMP[i][0],16), y:j(A_BUMP[i][1],16), r:26,
+      charge:0, heat:0, hue:hues[i%hues.length], id:'b'+i});
+  }
+  for(let i=0;i<C.nSpin;i++)
+    T.spinners.push({x:A_SPIN[i][0], y:A_SPIN[i][1], r:19, ang:0, spin:0, cd:0, id:'s'+i});
+  for(let i=0;i<C.nRamp;i++)
+    T.ramps.push({x:A_RAMP[i][0], y:A_RAMP[i][1], r:23, cd:0, glow:0, id:'r'+i});
+  for(let i=0;i<C.nTarg;i++){
+    const bank = {x:A_TARG[i][0], y:A_TARG[i][1], boxes:[], reset:0, id:'t'+i};
+    for(let k=0;k<3;k++) bank.boxes.push({x:A_TARG[i][0]-54+k*38, y:A_TARG[i][1], w:26, h:11, down:false});
+    T.targets.push(bank);
+  }
+  for(let i=0;i<C.nMagn;i++)
+    T.magnets.push({x:A_MAGN[i][0], y:A_MAGN[i][1], pulse:0});
+  if(C.nSauc) T.saucer = {x:A_SAUC[0], y:A_SAUC[1], r:21, hold:0, glow:0};
+  staticDirty = true;
+}
+
+/* =========================================================================
+   4. FX
+   ========================================================================= */
+const FX = {parts:[], rings:[], texts:[]};
+let shake = 0, timeScale = 1, tsTarget = 1;
+
+function part(x,y,vx,vy,hue,life,sz){
+  if(FX.parts.length > 1100) FX.parts.shift();
+  FX.parts.push({x,y,vx,vy,hue,l:life,L:life,sz:sz||2});
+}
+function burst(x,y,n,hue,pow){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, s = (0.3+Math.random())*pow;
+    part(x,y,Math.cos(a)*s, Math.sin(a)*s, hue+(Math.random()*30-15), 0.30+Math.random()*0.45, 1+Math.random()*2.4);
+  }
+}
+function ring(x,y,r0,r1,hue,life,w){
+  if(FX.rings.length>90) FX.rings.shift();
+  FX.rings.push({x,y,r0,r1,hue,l:life,L:life,w:w||2});
+}
+function float(x,y,txt,hue,big){
+  if(FX.texts.length>60) FX.texts.shift();
+  FX.texts.push({x,y,txt,hue,l:0.95,L:0.95,big:big||0, vx:(Math.random()*2-1)*14});
+}
+function stepFX(dt){
+  for(let i=FX.parts.length-1;i>=0;i--){ const p=FX.parts[i];
+    p.l-=dt; if(p.l<=0){FX.parts[i]=FX.parts[FX.parts.length-1];FX.parts.pop();continue;}
+    p.x+=p.vx*dt*60; p.y+=p.vy*dt*60; p.vy+=dt*7; p.vx*=0.985; p.vy*=0.985;
+  }
+  for(let i=FX.rings.length-1;i>=0;i--){ const q=FX.rings[i];
+    q.l-=dt; if(q.l<=0){FX.rings[i]=FX.rings[FX.rings.length-1];FX.rings.pop();} }
+  for(let i=FX.texts.length-1;i>=0;i--){ const t=FX.texts[i];
+    t.l-=dt; if(t.l<=0){FX.texts[i]=FX.texts[FX.texts.length-1];FX.texts.pop();continue;}
+    t.y-=dt*52; t.x+=t.vx*dt;
+  }
+  shake *= Math.pow(0.0016, dt);
+  timeScale += (tsTarget - timeScale) * Math.min(1, dt*7);
+  if(tsTarget<1){ hitstop -= dt; if(hitstop<=0) tsTarget=1; }
+}
+let hitstop = 0;
+function slowmo(d){ hitstop = d; tsTarget = 0.34; }
+
+/* =========================================================================
+   5. SCORING
+   ========================================================================= */
+let scoreWin = 0;   // score earned in the current EMA window
+
+function award(v, x, y, hue, big){
+  G.run.score += v;
+  G.meta.lifetime += v;
+  scoreWin += v;
+  if(v > 0) float(x, y, '+'+fmt(v), hue, big);
+}
+
+// FLOW: reward hitting a *different* target than last time
+function touchTarget(id, x, y){
+  const R = G.run;
+  if(R.lastTarget === id){
+    R.flow = Math.max(C.flowFloor, R.flow * 0.5);
+    float(x, y-16, 'SAME', 0, 0);
+  } else {
+    R.flow = Math.min(C.flowCap, R.flow + C.flowGain);
+  }
+  R.lastTarget = id; R.flowIdle = 0;
+}
+
+function hitValue(mult){
+  let v = C.base * G.run.flow * mult;
+  if(Math.random() < C.crit) v *= C.critM;
+  return v;
+}
+
+/* =========================================================================
+   6. PHYSICS
+   ========================================================================= */
+function feed(n){
+  n = n||1;
+  for(let i=0;i<n;i++){
+    if(G.balls.length >= C.maxBalls) return;
+    G.balls.push({
+      x: 300 + (Math.random()*2-1)*85, y: 54,
+      vx:(Math.random()*2-1)*60, vy: 170 + Math.random()*90,
+      r: 9, energy: 0, trail: [], laneLock: -1, hue: 190, stall: 0
+    });
+  }
+}
+
+function segClose(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+  let t = l2 ? ((px-ax)*dx+(py-ay)*dy)/l2 : 0;
+  if(t<0)t=0; else if(t>1)t=1;
+  return [ax+t*dx, ay+t*dy, t];
+}
+
+function reflect(b, nx, ny, e, minOut){
+  const vn = b.vx*nx + b.vy*ny;
+  if(vn < 0){
+    b.vx -= (1+e)*vn*nx;
+    b.vy -= (1+e)*vn*ny;
+  }
+  const out = b.vx*nx + b.vy*ny;
+  if(out < minOut){ b.vx += (minOut-out)*nx; b.vy += (minOut-out)*ny; }
+  return Math.abs(vn);
+}
+
+function physics(dt){
+  const R = G.run;
+
+  // ---- flippers (kinematic) ----
+  for(const key of ['flipL','flipR']){
+    const f = T[key], spec = (key==='flipL')?FLIP.L:FLIP.R;
+    f.pa = f.a;
+    let want = spec.rest;
+    if(f.cd > 0){ f.cd -= dt; want = spec.fire; }
+    else {
+      // auto-fire when a descending ball enters reach on this side
+      for(const b of G.balls){
+        if(b.y < 690) continue;
+        if(b.vy <= 0) continue;
+        if(key==='flipL' ? b.x > 312 : b.x < 288) continue;
+        const dx = b.x-spec.px, dy = b.y-spec.py;
+        if(dx*dx+dy*dy < C.flipReach*C.flipReach){ f.cd = 0.11; want = spec.fire; break; }
+      }
+    }
+    f.a += (want - f.a) * Math.min(1, dt*34);
+    f.om = (f.a - f.pa)/dt;
+  }
+
+  // ---- per ball ----
+  for(let i=G.balls.length-1;i>=0;i--){
+    const b = G.balls[i];
+
+    // magnets
+    for(const m of T.magnets){
+      const dx=m.x-b.x, dy=m.y-b.y, d2=dx*dx+dy*dy;
+      if(d2 < 30000 && d2 > 40){
+        const d=Math.sqrt(d2), f=42000/d2;
+        b.vx += dx/d*f*dt; b.vy += dy/d*f*dt;
+        m.pulse = 1;
+      }
+    }
+
+    b.vy += GRAV * C.grav * dt;
+
+    // ---- anti-stall watchdog ----------------------------------------
+    // A ball can wedge between two colliders (typically the inlane wall and a
+    // flipper pivot) and sit there forever, which would soft-lock an idle game.
+    // Low in the funnel we let it die (that pays Chrome); higher up we nudge it.
+    const sp = Math.hypot(b.vx, b.vy);
+    if(sp < 80){
+      b.stall += dt;
+      if(b.stall > 0.9){
+        b.stall = 0;
+        if(b.y > 700){ drain(b, i); continue; }
+        b.vy = -640;
+        b.vx += (300 - b.x)*0.9 + (Math.random()*2-1)*80;
+        burst(b.x, b.y, 12, 200, 3);
+        ring(b.x, b.y, 6, 44, 200, 0.4, 2);
+        shake = Math.max(shake, 4);
+      }
+    } else b.stall = 0;
+
+    // clamp
+    const sp2 = b.vx*b.vx + b.vy*b.vy;
+    if(sp2 > VMAX*VMAX){ const s = VMAX/Math.sqrt(sp2); b.vx*=s; b.vy*=s; }
+
+    b.x += b.vx*dt; b.y += b.vy*dt;
+
+    // trail
+    b.trail.push(b.x, b.y);
+    if(b.trail.length > 30) b.trail.splice(0,2);
+
+    // ---- walls ----
+    for(const w of WALLS){
+      const cp = segClose(b.x,b.y,w[0],w[1],w[2],w[3]);
+      let nx = b.x-cp[0], ny = b.y-cp[1];
+      const d = Math.hypot(nx,ny);
+      if(d < b.r && d > 0.0001){
+        nx/=d; ny/=d;
+        b.x = cp[0]+nx*b.r; b.y = cp[1]+ny*b.r;
+        reflect(b,nx,ny,0.72,20);
+      }
+    }
+
+    // ---- containment clamp -------------------------------------------
+    // At high upgrade levels a ball can travel further in one step than its own
+    // radius and tunnel straight through a wall segment. This is the hard
+    // guarantee that it can never leave the cabinet. The bottom stays open
+    // because that is the drain.
+    if(b.x < 20+b.r){ b.x = 20+b.r; if(b.vx < 0) b.vx = -b.vx*0.7; }
+    else if(b.x > 580-b.r){ b.x = 580-b.r; if(b.vx > 0) b.vx = -b.vx*0.7; }
+    if(b.y < 20+b.r){ b.y = 20+b.r; if(b.vy < 0) b.vy = -b.vy*0.7; }
+
+    // ---- slingshots ----
+    for(let k=0;k<SLING.length;k++){
+      const s = SLING[k];
+      const cp = segClose(b.x,b.y,s.ax,s.ay,s.bx,s.by);
+      let nx=b.x-cp[0], ny=b.y-cp[1];
+      const d=Math.hypot(nx,ny);
+      if(d < b.r+4 && d > 0.0001){
+        nx/=d; ny/=d;
+        b.x = cp[0]+nx*(b.r+4); b.y = cp[1]+ny*(b.r+4);
+        const imp = reflect(b,nx,ny,0.90,60);
+        const kickF = 430*C.kick;
+        b.vx += nx*kickF; b.vy += ny*kickF;
+        b.energy += imp*0.5 + 14;
+        touchTarget(3000+k, cp[0], cp[1]);
+        const v = hitValue(3);
+        award(v, cp[0], cp[1]-14, s.hue, 0);
+        G.run.hits++;
+        s.glow = 1;
+        burst(cp[0],cp[1], 14, s.hue, 4);
+        ring(cp[0],cp[1], 6, 54, s.hue, 0.35, 3);
+        shake = Math.max(shake, 5);
+      }
+    }
+
+    // ---- flippers ----
+    for(const key of ['flipL','flipR']){
+      const f=T[key], spec=(key==='flipL')?FLIP.L:FLIP.R;
+      const ex = spec.px + Math.cos(f.a)*spec.len, ey = spec.py + Math.sin(f.a)*spec.len;
+      const cp = segClose(b.x,b.y,spec.px,spec.py,ex,ey);
+      let nx=b.x-cp[0], ny=b.y-cp[1];
+      const d=Math.hypot(nx,ny);
+      if(d < b.r+5 && d > 0.0001){
+        nx/=d; ny/=d;
+        b.x = cp[0]+nx*(b.r+5); b.y = cp[1]+ny*(b.r+5);
+        const imp = reflect(b,nx,ny,0.62,40);
+        // inject flipper angular velocity at the contact point.
+        // lever has a floor so a ball resting near the pivot still gets launched.
+        const lever = Math.max(0.38, cp[2]) * spec.len;
+        const boost = Math.abs(f.om)*lever*0.30*C.flipPow*C.kick;
+        if(boost > 8){
+          b.vx += nx*boost; b.vy += ny*boost;
+          burst(cp[0],cp[1], 5, 200, 2.2); shake = Math.max(shake, 3);
+        }
+        b.energy += imp*0.4;
+      }
+    }
+
+    // ---- bumpers ----
+    for(let k=0;k<T.bumpers.length;k++){
+      const p = T.bumpers[k];
+      let nx=b.x-p.x, ny=b.y-p.y;
+      const d=Math.hypot(nx,ny), rr = b.r+p.r;
+      if(d < rr && d > 0.0001){
+        nx/=d; ny/=d;
+        b.x = p.x+nx*rr; b.y = p.y+ny*rr;
+        const imp = reflect(b,nx,ny,C.rest,150*C.kick);
+        b.vx *= C.kick; b.vy *= C.kick;
+        onBumper(p, k, b, imp);
+      }
+    }
+
+    // ---- spinners (sensor) ----
+    for(let k=0;k<T.spinners.length;k++){
+      const s = T.spinners[k];
+      if(s.cd>0) continue;
+      if(Math.hypot(b.x-s.x, b.y-s.y) < s.r + b.r){
+        s.cd = 0.18; s.spin = 1;
+        touchTarget(1000+k, s.x, s.y);
+        const v = hitValue(9);
+        award(v, s.x, s.y-8, 48, 0);
+        b.vx *= 1.10; b.vy *= 1.10; b.energy += 12;
+        burst(s.x,s.y,10,48,3); ring(s.x,s.y,s.r,s.r+34,48,0.4,2);
+        R.hits++;
+      }
+    }
+
+    // ---- return ramps ----
+    for(const rp of T.ramps){
+      if(rp.cd>0) continue;
+      if(Math.hypot(b.x-rp.x, b.y-rp.y) < rp.r + b.r){
+        rp.cd = 0.35; rp.glow = 1;
+        b.x = rp.x; b.y = rp.y - 6;
+        b.vx = (300 - rp.x) * 0.42 + (Math.random()*2-1)*40;
+        b.vy = -(900 + 130*Math.random());
+        b.laneLock = -1;
+        const v = hitValue(6);
+        award(v, rp.x, rp.y-20, 150, 0);
+        burst(rp.x,rp.y,20,150,4.5); ring(rp.x,rp.y,10,70,150,0.5,3);
+        shake = Math.max(shake, 5);
+      }
+    }
+
+    // ---- drop targets ----
+    for(const bank of T.targets){
+      if(bank.reset>0) continue;
+      for(let k=0;k<3;k++){
+        const bx = bank.boxes[k];
+        if(bx.down) continue;
+        if(Math.abs(b.x-bx.x) < bx.w/2+b.r && Math.abs(b.y-bx.y) < bx.h/2+b.r){
+          bx.down = true;
+          b.vy = -Math.abs(b.vy)*0.85 - 90;
+          touchTarget(2000+k, bx.x, bx.y);
+          const v = hitValue(14);
+          award(v, bx.x, bx.y-14, 268, 0);
+          burst(bx.x,bx.y,16,268,3.5);
+          R.hits++;
+          if(bank.boxes.every(q=>q.down)){
+            bank.reset = 0.7;
+            const bv = hitValue(140);
+            award(bv, bank.x, bank.y-30, 268, 1);
+            G.run.chrome += 0.25*C.drainMul;
+            ring(bank.x,bank.y,10,150,268,0.7,4);
+            burst(bank.x,bank.y,60,268,7);
+            shake = Math.max(shake, 12); slowmo(0.18);
+            toast('TARGET BANK  +'+fmt(bv));
+          }
+        }
+      }
+    }
+
+    // ---- saucer ----
+    if(T.saucer && T.saucer.hold<=0){
+      if(Math.hypot(b.x-T.saucer.x, b.y-T.saucer.y) < T.saucer.r){
+        T.saucer.hold = 0.9; T.saucer.glow = 1;
+        burst(T.saucer.x,T.saucer.y,24,320,3);
+        G.balls.splice(i,1);
+        continue;
+      }
+    }
+
+    // ---- top lanes ----
+    for(let k=0;k<3;k++){
+      const lx = LANES[k][0], ly = LANES[k][1];
+      if(Math.abs(b.x-lx) < LANE_W/2 && Math.abs(b.y-ly) < LANE_H/2){
+        if(b.laneLock !== k && !R.lanes[k]){
+          b.laneLock = k; R.lanes[k] = true;
+          ring(lx,ly,8,46,188,0.5,3); burst(lx,ly,14,188,3);
+          award(hitValue(4), lx, ly, 188, 0);
+          if(R.lanes[0]&&R.lanes[1]&&R.lanes[2]) jackpot();
+        }
+      } else if(b.laneLock === k && Math.abs(b.y-ly) > LANE_H){
+        b.laneLock = -1;
+      }
+    }
+
+    // ---- drain ----
+    if(b.y > TH + 30){
+      // kickback saves the ball
+      if(C.nKick && R.kickCharge >= 1){
+        R.kickCharge -= 1;
+        b.x = 300 + (Math.random()*2-1)*40; b.y = TH-70;
+        b.vx = (Math.random()*2-1)*120; b.vy = -1050;
+        burst(b.x, TH-40, 34, 12, 6); ring(b.x,TH-40,10,90,12,0.5,4);
+        shake = Math.max(shake, 9);
+        toast('KICKBACK');
+        continue;
+      }
+      drain(b, i);
+    }
+  }
+
+  // ---- object timers ----
+  for(const s of T.spinners){ if(s.cd>0)s.cd-=dt; s.ang += s.spin*dt*15; s.spin *= Math.pow(0.03,dt); }
+  for(const rp of T.ramps){ if(rp.cd>0)rp.cd-=dt; rp.glow *= Math.pow(0.02,dt); }
+  for(const m of T.magnets) m.pulse *= Math.pow(0.05,dt);
+  for(const s of SLING) s.glow = (s.glow||0) * Math.pow(0.02,dt);
+  for(const bank of T.targets){
+    if(bank.reset>0){ bank.reset-=dt; if(bank.reset<=0) bank.boxes.forEach(q=>q.down=false); }
+  }
+  for(const p of T.bumpers) p.heat *= Math.pow(0.25, dt);
+  if(T.saucer){
+    T.saucer.glow *= Math.pow(0.06,dt);
+    if(T.saucer.hold>0){
+      T.saucer.hold -= dt;
+      if(T.saucer.hold<=0){
+        const room = Math.max(1, Math.min(3, C.maxBalls - G.balls.length));
+        for(let k=0;k<room;k++){
+          const a = -Math.PI/2 + (k-1)*0.6;
+          G.balls.push({x:T.saucer.x, y:T.saucer.y, vx:Math.cos(a)*620, vy:Math.sin(a)*620,
+                        r:9, energy:0, trail:[], laneLock:-1, hue:320, stall:0});
+        }
+        burst(T.saucer.x,T.saucer.y,70,320,8); ring(T.saucer.x,T.saucer.y,10,170,320,0.8,5);
+        shake = Math.max(shake,14); slowmo(0.2);
+        toast('MULTIBALL x'+room);
+      }
+    }
+  }
+
+  // kickback recharge
+  if(C.nKick && R.kickCharge < C.kickCap) R.kickCharge = Math.min(C.kickCap, R.kickCharge + dt*0.14);
+
+  // FLOW decay
+  R.flowIdle += dt;
+  if(R.flowIdle > 1.5){
+    R.flow = Math.max(C.flowFloor, R.flow - C.flowDecay*dt);
+    if(R.flow <= C.flowFloor) R.lastTarget = -1;
+  }
+
+  // feeder
+  feedTimer -= dt;
+  if(feedTimer <= 0){ feedTimer = C.feedInt; feed(1); }
+  if(G.balls.length === 0 && feedTimer > 0.45) feedTimer = 0.45;
+}
+let feedTimer = 0;
+
+function onBumper(p, idx, b, imp){
+  const R = G.run;
+  touchTarget(idx, p.x, p.y);
+  p.charge++; p.heat = Math.min(3, p.heat + 0.9);
+  b.energy += imp*0.5 + 8;
+  R.hits++;
+
+  const v = hitValue(1);
+  award(v, p.x, p.y-14, p.hue, 0);
+  burst(p.x, p.y, 8 + Math.min(16, imp/60|0), p.hue, 2.6);
+  ring(p.x, p.y, p.r, p.r+26, p.hue, 0.32, 2);
+  shake = Math.max(shake, Math.min(6, imp/120));
+
+  if(p.charge >= C.chargeMax){
+    p.charge = 0; R.pops++;
+    const bv = hitValue(C.burst);
+    award(bv, p.x, p.y-30, p.hue, 1);
+    burst(p.x,p.y,48,p.hue,6.5); ring(p.x,p.y,10,130,p.hue,0.6,4);
+    ring(p.x,p.y,10,80,60,0.45,2);
+    shake = Math.max(shake, 10);
+    // pop shoves every nearby ball
+    for(const o of G.balls){
+      const dx=o.x-p.x, dy=o.y-p.y, d=Math.hypot(dx,dy)||1;
+      if(d < 190){ const f=(1-d/190)*340; o.vx += dx/d*f; o.vy += dy/d*f; }
+    }
+  }
+}
+
+function jackpot(){
+  const R = G.run;
+  R.lanes = [false,false,false]; R.jackpots++;
+  const ch = C.jackChrome;
+  R.chrome += ch;
+  const v = hitValue(400);
+  award(v, 300, 150, 188, 1);
+  for(const L of LANES){ burst(L[0],L[1],40,188,7); ring(L[0],L[1],10,140,188,0.8,4); }
+  ring(300, 150, 20, 400, 188, 1.0, 6);
+  shake = Math.max(shake, 18); slowmo(0.28);
+  for(const b of G.balls){ b.vy -= 200; }
+  toast('JACKPOT  +'+ch.toFixed(1)+' CHROME  +'+fmt(v));
+}
+
+function drain(b, i){
+  const R = G.run;
+  R.drains++;
+  // DRAIN MARKET: momentum -> chrome shards
+  const shards = b.energy * 0.00019 * C.drainMul;
+  if(shards > 0){
+    R.chrome += shards;
+    float(b.x, TH-40, '+'+shards.toFixed(shards<1?3:2)+' ch', 48, 0);
+  }
+  burst(b.x, TH-20, 16, 48, 3.4);
+  G.balls.splice(i,1);
+  if(Math.random() < C.recycle) feed(1);
+}
+
+/* =========================================================================
+   7. RENDER
+   ========================================================================= */
+const cv = document.getElementById('table');
+const ctx = cv.getContext('2d');
+let bcv = document.createElement('canvas'); bcv.width = TW>>1; bcv.height = TH>>1;
+const bctx = bcv.getContext('2d');
+let scv = document.createElement('canvas'); scv.width = TW; scv.height = TH;
+const sctx = scv.getContext('2d');
+let staticDirty = true;
+
+function drawStatic(){
+  const g = sctx;
+  g.clearRect(0,0,TW,TH);
+  // playfield gradient
+  const grd = g.createLinearGradient(0,0,0,TH);
+  grd.addColorStop(0,'#0a1030'); grd.addColorStop(0.5,'#070a1c'); grd.addColorStop(1,'#04060f');
+  g.fillStyle = grd; g.fillRect(0,0,TW,TH);
+  // grid
+  g.strokeStyle='rgba(60,90,190,0.10)'; g.lineWidth=1;
+  for(let x=20;x<=580;x+=40){ g.beginPath(); g.moveTo(x,20); g.lineTo(x,TH); g.stroke(); }
+  for(let y=20;y<=TH;y+=40){ g.beginPath(); g.moveTo(20,y); g.lineTo(580,y); g.stroke(); }
+  // lane bays
+  for(const L of LANES){
+    g.fillStyle='rgba(40,220,255,0.05)';
+    g.fillRect(L[0]-LANE_W/2, L[1]-LANE_H/2, LANE_W, LANE_H);
+  }
+  // walls
+  g.strokeStyle='#4a63c8'; g.lineWidth=4; g.shadowColor='#3a56ff'; g.shadowBlur=14;
+  g.beginPath();
+  for(const w of WALLS){ g.moveTo(w[0],w[1]); g.lineTo(w[2],w[3]); }
+  g.stroke();
+  g.shadowBlur=0;
+  // drain mouth
+  g.strokeStyle='rgba(255,60,90,0.35)'; g.lineWidth=2; g.setLineDash([7,9]);
+  g.beginPath(); g.moveTo(214,890); g.lineTo(386,890); g.stroke(); g.setLineDash([]);
+  staticDirty = false;
+}
+
+function hsl(h,s,l,a){ return 'hsla('+h+','+s+'%,'+l+'%,'+(a===undefined?1:a)+')'; }
+
+function render(){
+  if(staticDirty) drawStatic();
+  const R = G.run;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,TW,TH);
+  ctx.save();
+  if(shake>0.2){ ctx.translate((Math.random()*2-1)*shake, (Math.random()*2-1)*shake); }
+  ctx.drawImage(scv,0,0);
+
+  // ---- lane lamps ----
+  for(let k=0;k<3;k++){
+    const L=LANES[k], on=R.lanes[k];
+    ctx.strokeStyle = on? hsl(188,100,68) : 'rgba(80,110,180,0.35)';
+    ctx.lineWidth = on?3:1.5;
+    if(on){ ctx.shadowColor=hsl(188,100,60); ctx.shadowBlur=18; }
+    ctx.strokeRect(L[0]-LANE_W/2, L[1]-LANE_H/2, LANE_W, LANE_H);
+    ctx.shadowBlur=0;
+    ctx.fillStyle = on? '#bff6ff' : 'rgba(120,150,210,0.45)';
+    ctx.font='bold 12px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillText(String(k+1), L[0], L[1]+4);
+  }
+
+  // ---- slingshots ----
+  for(const s of SLING){
+    const gl = s.glow||0;
+    ctx.strokeStyle = gl>0.05 ? '#ffffff' : hsl(s.hue,95,58,0.85);
+    ctx.lineWidth = 7 + gl*5; ctx.lineCap='round';
+    ctx.shadowColor = hsl(s.hue,100,55); ctx.shadowBlur = 14 + gl*34;
+    ctx.beginPath(); ctx.moveTo(s.ax,s.ay); ctx.lineTo(s.bx,s.by); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // ---- magnets ----
+  for(const m of T.magnets){
+    const p = m.pulse;
+    ctx.strokeStyle = hsl(320,90,55, 0.25+p*0.5); ctx.lineWidth=1.5;
+    for(let k=1;k<=3;k++){
+      ctx.beginPath(); ctx.arc(m.x,m.y, 20*k + p*10, 0, 6.283); ctx.stroke();
+    }
+    ctx.fillStyle=hsl(320,95,60,0.9); ctx.shadowColor=hsl(320,95,55); ctx.shadowBlur=16+p*20;
+    ctx.beginPath(); ctx.arc(m.x,m.y,7,0,6.283); ctx.fill(); ctx.shadowBlur=0;
+  }
+
+  // ---- ramps ----
+  for(const rp of T.ramps){
+    const gl = rp.glow;
+    ctx.strokeStyle=hsl(150,95,55, 0.5+gl*0.5); ctx.lineWidth=3;
+    ctx.shadowColor=hsl(150,95,55); ctx.shadowBlur=12+gl*28;
+    ctx.beginPath(); ctx.arc(rp.x,rp.y,rp.r,0,6.283); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(rp.x, rp.y+9); ctx.lineTo(rp.x, rp.y-9);
+    ctx.moveTo(rp.x-6, rp.y-3); ctx.lineTo(rp.x, rp.y-10); ctx.lineTo(rp.x+6, rp.y-3);
+    ctx.stroke(); ctx.shadowBlur=0;
+  }
+
+  // ---- spinners ----
+  for(const s of T.spinners){
+    ctx.save(); ctx.translate(s.x,s.y); ctx.rotate(s.ang);
+    ctx.strokeStyle=hsl(48,100,60,0.85); ctx.lineWidth=3;
+    ctx.shadowColor=hsl(48,100,55); ctx.shadowBlur=10+s.spin*24;
+    for(let k=0;k<3;k++){
+      ctx.rotate(2.094);
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(s.r,0); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(0,0,s.r,0,6.283); ctx.stroke();
+    ctx.restore(); ctx.shadowBlur=0;
+  }
+
+  // ---- drop targets ----
+  for(const bank of T.targets){
+    for(const bx of bank.boxes){
+      if(bx.down){
+        ctx.fillStyle='rgba(90,70,160,0.25)';
+        ctx.fillRect(bx.x-bx.w/2, bx.y-2, bx.w, 4);
+      } else {
+        ctx.fillStyle=hsl(268,85,58,0.9);
+        ctx.shadowColor=hsl(268,90,60); ctx.shadowBlur=12;
+        ctx.fillRect(bx.x-bx.w/2, bx.y-bx.h/2, bx.w, bx.h);
+        ctx.shadowBlur=0;
+        ctx.fillStyle='rgba(255,255,255,0.55)';
+        ctx.fillRect(bx.x-bx.w/2, bx.y-bx.h/2, bx.w, 2);
+      }
+    }
+  }
+
+  // ---- saucer ----
+  if(T.saucer){
+    const s=T.saucer, held = s.hold>0;
+    ctx.strokeStyle=hsl(320,95,60, held?1:0.5); ctx.lineWidth=held?4:2;
+    ctx.shadowColor=hsl(320,95,55); ctx.shadowBlur=14+s.glow*30;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.283); ctx.stroke();
+    if(held){
+      ctx.fillStyle=hsl(320,95,70,0.35);
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.r*(1-s.hold),0,6.283); ctx.fill();
+    }
+    ctx.shadowBlur=0;
+  }
+
+  // ---- kickback indicators ----
+  if(C.nKick){
+    for(let k=0;k<C.nKick;k++){
+      const kx = k===0? 240 : 360, ready = R.kickCharge >= 1;
+      ctx.strokeStyle = ready? hsl(12,100,62) : 'rgba(140,70,70,0.35)';
+      ctx.lineWidth = ready?3:1.5;
+      if(ready){ ctx.shadowColor=hsl(12,100,58); ctx.shadowBlur=16; }
+      ctx.beginPath();
+      ctx.moveTo(kx, 884); ctx.lineTo(kx, 862);
+      ctx.moveTo(kx-7, 869); ctx.lineTo(kx, 860); ctx.lineTo(kx+7, 869);
+      ctx.stroke(); ctx.shadowBlur=0;
+    }
+  }
+
+  // ---- bumpers ----
+  for(const p of T.bumpers){
+    const ch = p.charge / C.chargeMax, ht = p.heat;
+    const lgt = 46 + ht*16, blur = 16 + ht*26;
+    const gg = ctx.createRadialGradient(p.x,p.y,2,p.x,p.y,p.r);
+    gg.addColorStop(0, hsl(p.hue, 100, Math.min(94, 68+ht*14)));
+    gg.addColorStop(0.55, hsl(p.hue, 95, lgt));
+    gg.addColorStop(1, hsl(p.hue, 90, 16));
+    ctx.shadowColor = hsl(p.hue, 100, 55); ctx.shadowBlur = blur;
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.283); ctx.fill();
+    ctx.shadowBlur = 0;
+    // charge arc
+    ctx.strokeStyle = hsl(52,100,70,0.95); ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r+5, -1.5708, -1.5708 + 6.283*ch); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.30)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r-5,0,6.283); ctx.stroke();
+  }
+
+  // ---- flippers ----
+  for(const key of ['flipL','flipR']){
+    const f=T[key], spec=(key==='flipL')?FLIP.L:FLIP.R;
+    const ex=spec.px+Math.cos(f.a)*spec.len, ey=spec.py+Math.sin(f.a)*spec.len;
+    const act = Math.abs(f.om)>1;
+    ctx.strokeStyle = act? '#ffffff' : hsl(200,90,64);
+    ctx.lineWidth=13; ctx.lineCap='round';
+    ctx.shadowColor=hsl(200,100,60); ctx.shadowBlur= act?30:14;
+    ctx.beginPath(); ctx.moveTo(spec.px,spec.py); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#0b1128'; ctx.beginPath(); ctx.arc(spec.px,spec.py,5,0,6.283); ctx.fill();
+  }
+
+  // ---- balls + trails ----
+  ctx.globalCompositeOperation='lighter';
+  for(const b of G.balls){
+    const t=b.trail;
+    for(let k=0;k<t.length-2;k+=2){
+      const a=(k/t.length)*0.5;
+      ctx.strokeStyle=hsl(b.hue,100,64,a); ctx.lineWidth = 1 + (k/t.length)*7;
+      ctx.beginPath(); ctx.moveTo(t[k],t[k+1]); ctx.lineTo(t[k+2],t[k+3]); ctx.stroke();
+    }
+  }
+  ctx.globalCompositeOperation='source-over';
+  for(const b of G.balls){
+    const gg = ctx.createRadialGradient(b.x-3,b.y-3,1,b.x,b.y,b.r);
+    gg.addColorStop(0,'#ffffff'); gg.addColorStop(0.4,hsl(b.hue,60,86)); gg.addColorStop(1,hsl(b.hue,70,42));
+    ctx.shadowColor=hsl(b.hue,100,70); ctx.shadowBlur=20;
+    ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.283); ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  // ---- fx ----
+  ctx.globalCompositeOperation='lighter';
+  for(const p of FX.parts){
+    const a = p.l/p.L;
+    ctx.fillStyle = hsl(p.hue,100,66,a);
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.sz*a+0.4,0,6.283); ctx.fill();
+  }
+  for(const q of FX.rings){
+    const k = 1-q.l/q.L, e = 1-Math.pow(1-k,3);
+    ctx.strokeStyle=hsl(q.hue,100,66,(1-k)*0.9); ctx.lineWidth=q.w*(1-k)+0.4;
+    ctx.beginPath(); ctx.arc(q.x,q.y,q.r0+(q.r1-q.r0)*e,0,6.283); ctx.stroke();
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.textAlign='center';
+  for(const t of FX.texts){
+    const a=Math.min(1,t.l/t.L*1.6);
+    const sz = t.big? 22 : 13;
+    ctx.font = (t.big?'900 ':'bold ')+sz+'px ui-monospace,monospace';
+    if(t.big){ ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,'+a+')'; ctx.strokeText(t.txt,t.x,t.y); }
+    ctx.fillStyle = t.hue? hsl(t.hue,100,78,a) : 'rgba(255,90,120,'+a+')';
+    ctx.shadowColor = t.hue? hsl(t.hue,100,60) : '#f36'; ctx.shadowBlur = t.big?22:10;
+    ctx.fillText(t.txt, t.x, t.y);
+    ctx.shadowBlur=0;
+  }
+
+  ctx.restore();
+
+  // ---- bloom pass ----
+  bctx.clearRect(0,0,bcv.width,bcv.height);
+  bctx.drawImage(cv,0,0,bcv.width,bcv.height);
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=0.46;
+  if(ctx.filter !== undefined) ctx.filter='blur(3px)';
+  ctx.drawImage(bcv,0,0,TW,TH);
+  ctx.filter='none';
+  ctx.restore();
+}
+
+/* =========================================================================
+   8. UI
+   ========================================================================= */
+function fmt(n){
+  if(!isFinite(n)) return '\u221e';
+  if(n < 0) return '-'+fmt(-n);
+  if(n < 1000) return n < 10 ? (Math.round(n*100)/100).toString() : Math.floor(n).toString();
+  const t = Math.floor(Math.log10(n)/3);
+  if(t < SUF.length){
+    const v = n/Math.pow(1000,t);
+    return (v<10? v.toFixed(2) : v<100? v.toFixed(1) : v.toFixed(0)) + SUF[t];
+  }
+  return n.toExponential(2).replace('e+','e');
+}
+const $ = id => document.getElementById(id);
+const panel = $('panel');
+
+let toastT = 0;
+function toast(msg){
+  const el=$('toast'); el.textContent=msg; el.classList.add('on'); toastT = 1.9;
+}
+
+function tokensFor(){
+  const life = G.meta.lifetime;
+  if(life < 1e9) return 0;
+  return Math.max(1, Math.floor(Math.sqrt(life/1e9) * (1 + G.meta.tokGain*0.1)));
+}
+
+function upRow(u){
+  const lv = G.run.lvl[u.id], mx = lv >= u.max, cst = cost(u);
+  const bal = u.cur==='s' ? G.run.score : G.run.chrome;
+  const can = !mx && bal >= cst;
+  const cls = 'row '+(u.cur==='s'?'sc':'ch')+(mx?' max':(can?'':' no'));
+  const cn  = u.cur==='s' ? 'cst-sc' : 'cst-ch';
+  const label = u.cur==='s' ? '' : ' chrome';
+  return '<button class="'+cls+'" data-up="'+u.id+'">'+
+    '<div class="t"><span class="n">'+u.name+'</span><span class="lv">Lv '+lv+' / '+u.max+'</span></div>'+
+    '<div class="d">'+u.d+'</div>'+
+    '<div class="cost"><span class="eff">'+u.e(C)+'</span>'+
+      (mx?'' : ' &nbsp;&middot;&nbsp; <span class="'+cn+'">'+fmt(cst)+label+'</span>')+
+    '</div></button>';
+}
+
+function buildPanel(){
+  const tab = G.ui.tab;
+  let h = '';
+  if(tab==='kin'){
+    h += '<p class="hint">The table runs itself. <b>KINETICS</b> changes how the ball behaves \u2014 more balls, bouncier impacts, harder kicks. Physics upgrades compound with everything else.</p>';
+    h += UPG.filter(u=>u.tab==='kin').map(upRow).join('');
+  }
+  else if(tab==='vol'){
+    h += '<p class="hint">What each impact is <b>worth</b>. The key stat is <b>FLOW</b>: it rises every time a ball strikes a target it did not just hit, and halves when it hits the same one twice. Spread your targets out.</p>';
+    h += UPG.filter(u=>u.tab==='vol').map(upRow).join('');
+  }
+  else if(tab==='arc'){
+    h += '<p class="hint">Spend <b>Chrome</b> to bolt real objects onto the playfield. Chrome comes from the <b>DRAIN MARKET</b> (a draining ball sells its momentum) and from <b>JACKPOTS</b> (light all three top lanes).</p>';
+    h += UPG.filter(u=>u.tab==='arc').map(upRow).join('');
+  }
+  else if(tab==='aut'){
+    h += '<p class="hint">Make the machine run better without you.</p>';
+    h += UPG.filter(u=>u.tab==='aut').map(upRow).join('');
+    if(C.autobuy){
+      h += '<div class="sect">AUTO-TUNER</div>';
+      h += '<button class="mini" id="btn-ab">AUTO-BUY: '+(G.ui.autobuy?'ON':'OFF')+'</button>';
+      h += '<p class="hint">Continuously buys the cheapest affordable Score upgrade. Chrome is never spent automatically.</p>';
+    }
+  }
+  else if(tab==='pre'){
+    const tk = tokensFor();
+    h += '<p class="hint">Rack the table and build a <b>new machine</b>. You lose Score, Chrome and upgrades. You keep <b>Tokens</b> and every perk below \u2014 and the new cabinet gets a freshly seeded playfield layout.</p>';
+    h += '<button class="big" id="btn-pre"'+(tk<1?' disabled':'')+'>'+
+         (tk<1 ? 'NEW MACHINE \u2014 need '+fmt(1e9)+' lifetime score'
+               : 'BUILD NEW MACHINE \u2014 +'+fmt(tk)+' TOKENS')+'</button>';
+    h += '<div class="kv"><span>Cabinet</span><span>'+cabName()+'</span></div>';
+    h += '<div class="kv"><span>Machines built</span><span>'+G.meta.machines+'</span></div>';
+    h += '<div class="kv"><span>Lifetime score</span><span>'+fmt(G.meta.lifetime)+'</span></div>';
+    h += '<div class="kv"><span>Tokens held</span><span>'+fmt(G.meta.tokens)+'</span></div>';
+    h += '<div class="sect">PERMANENT PERKS \u2014 TOKENS</div>';
+    for(const p of META){
+      const lv=G.meta[p.id], mx=lv>=p.max, cst=mcost(p), can=!mx && G.meta.tokens>=cst;
+      h += '<button class="row tk'+(mx?' max':(can?'':' no'))+'" data-meta="'+p.id+'">'+
+        '<div class="t"><span class="n">'+p.name+'</span><span class="lv">Lv '+lv+' / '+p.max+'</span></div>'+
+        '<div class="d">'+p.d+'</div>'+
+        '<div class="cost"><span class="eff">'+p.e(G.meta)+'</span>'+
+          (mx?'':' &nbsp;&middot;&nbsp; <span class="cst-tk">'+fmt(cst)+' tokens</span>')+
+        '</div></button>';
+    }
+  }
+  else if(tab==='sav'){
+    h += '<div class="sect">SESSION</div>';
+    h += '<div class="kv"><span>Target hits</span><span>'+fmt(G.run.hits)+'</span></div>';
+    h += '<div class="kv"><span>Bumper pops</span><span>'+fmt(G.run.pops)+'</span></div>';
+    h += '<div class="kv"><span>Jackpots</span><span>'+fmt(G.run.jackpots)+'</span></div>';
+    h += '<div class="kv"><span>Balls drained</span><span>'+fmt(G.run.drains)+'</span></div>';
+    h += '<div class="kv"><span>Best score</span><span>'+fmt(G.meta.best)+'</span></div>';
+    h += '<div class="kv"><span>Storage</span><span>'+(canStore?'localStorage':'session only')+'</span></div>';
+    h += '<div class="sect">SAVE DATA</div>';
+    h += '<button class="mini" id="btn-save">SAVE NOW</button>'+
+         '<button class="mini" id="btn-exp">EXPORT JSON</button>'+
+         '<button class="mini" id="btn-dl">DOWNLOAD FILE</button>'+
+         '<button class="mini" id="btn-imp">IMPORT FROM BOX</button>'+
+         '<button class="mini" id="btn-file">LOAD FILE</button>';
+    h += '<input type="file" id="fin" accept=".json,application/json" style="display:none">';
+    h += '<textarea id="box" placeholder="Raw JSON save appears here after EXPORT. Paste a save in and press IMPORT FROM BOX."></textarea>';
+    if(!canStore) h += '<p class="warn">This environment blocks localStorage, so progress is session-only. Export your JSON before closing the tab.</p>';
+    h += '<div class="sect">DANGER</div>';
+    h += '<button class="mini" id="btn-wipe">HARD RESET \u2014 ERASE EVERYTHING</button>';
+  }
+  panel.innerHTML = h;
+  wirePanel();
+}
+
+function cabName(){ const i=G.meta.machines; return 'Cabinet '+(CAB[i]||('Mk '+(i+1))); }
+
+function refreshPanel(){
+  // cheap in-place refresh of affordability + effect text for upgrade rows
+  const rows = panel.querySelectorAll('[data-up]');
+  for(const el of rows){
+    const u = UPG.find(q=>q.id===el.getAttribute('data-up'));
+    const lv=G.run.lvl[u.id], mx=lv>=u.max, cst=cost(u);
+    const bal = u.cur==='s'? G.run.score : G.run.chrome;
+    el.classList.toggle('max', mx);
+    el.classList.toggle('no', !mx && bal < cst);
+    el.querySelector('.lv').textContent = 'Lv '+lv+' / '+u.max;
+    const cn = u.cur==='s'?'cst-sc':'cst-ch', lab = u.cur==='s'?'':' chrome';
+    el.querySelector('.cost').innerHTML = '<span class="eff">'+u.e(C)+'</span>'+
+      (mx?'':' &nbsp;&middot;&nbsp; <span class="'+cn+'">'+fmt(cst)+lab+'</span>');
+  }
+  const mrows = panel.querySelectorAll('[data-meta]');
+  for(const el of mrows){
+    const p = META.find(q=>q.id===el.getAttribute('data-meta'));
+    const lv=G.meta[p.id], mx=lv>=p.max, cst=mcost(p);
+    el.classList.toggle('max', mx);
+    el.classList.toggle('no', !mx && G.meta.tokens < cst);
+  }
+}
+
+function wirePanel(){
+  const ab=$('btn-ab');   if(ab) ab.addEventListener('click',()=>{ G.ui.autobuy=!G.ui.autobuy; buildPanel(); });
+  const pr=$('btn-pre');  if(pr) pr.addEventListener('click', prestige);
+  const sv=$('btn-save'); if(sv) sv.addEventListener('click',()=>{ save(); toast('SAVED'); });
+  const ex=$('btn-exp');  if(ex) ex.addEventListener('click',()=>{ $('box').value = exportJSON(); toast('EXPORTED TO BOX'); });
+  const dl=$('btn-dl');   if(dl) dl.addEventListener('click', download);
+  const im=$('btn-imp');  if(im) im.addEventListener('click',()=>{ importJSON($('box').value); });
+  const fb=$('btn-file'); if(fb) fb.addEventListener('click',()=>$('fin').click());
+  const fi=$('fin');      if(fi) fi.addEventListener('change', e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const rd=new FileReader(); rd.onload=()=>importJSON(String(rd.result)); rd.readAsText(f);
+  });
+  const wp=$('btn-wipe'); if(wp) wp.addEventListener('click',()=>{
+    if(wipeArm){ hardReset(); } else { wipeArm=true; wp.textContent='PRESS AGAIN TO CONFIRM'; setTimeout(()=>{wipeArm=false; if($('btn-wipe'))$('btn-wipe').textContent='HARD RESET \u2014 ERASE EVERYTHING';},3000); }
+  });
+}
+let wipeArm=false;
+
+panel.addEventListener('click', e=>{
+  const up = e.target.closest('[data-up]');
+  if(up){ buy(up.getAttribute('data-up')); return; }
+  const mt = e.target.closest('[data-meta]');
+  if(mt){ buyMeta(mt.getAttribute('data-meta')); return; }
+});
+
+for(const t of document.querySelectorAll('.tab')){
+  t.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(q=>q.classList.remove('on'));
+    t.classList.add('on');
+    G.ui.tab = t.getAttribute('data-tab');
+    buildPanel();
+  });
+}
+
+function buy(id){
+  const u = UPG.find(q=>q.id===id); if(!u) return;
+  const lv = G.run.lvl[id]; if(lv >= u.max) return;
+  const cst = cost(u);
+  if(u.cur==='s'){ if(G.run.score < cst) return; G.run.score -= cst; }
+  else           { if(G.run.chrome < cst) return; G.run.chrome -= cst; }
+  G.run.lvl[id]++;
+  const structural = ['bumper','spinner','ramp','target','magnet','saucer','kickback'].indexOf(id) >= 0;
+  derive();
+  if(structural){ buildTable(); ring(300,450,20,320,188,0.7,4); shake=Math.max(shake,10); toast(u.name+' INSTALLED'); }
+  buildPanel();
+}
+function buyMeta(id){
+  const p = META.find(q=>q.id===id); if(!p) return;
+  if(G.meta[id] >= p.max) return;
+  const cst = mcost(p);
+  if(G.meta.tokens < cst) return;
+  G.meta.tokens -= cst; G.meta[id]++;
+  derive(); buildPanel(); toast(p.name+' Lv '+G.meta[id]);
+}
+
+function autobuyTick(){
+  if(!G.ui.autobuy || !C.autobuy) return;
+  let best=null, bc=Infinity;
+  for(const u of UPG){
+    if(u.cur!=='s') continue;
+    if(G.run.lvl[u.id] >= u.max) continue;
+    const c = cost(u);
+    if(c <= G.run.score && c < bc){ bc=c; best=u; }
+  }
+  if(best) buy(best.id);
+}
+
+function prestige(){
+  const tk = tokensFor(); if(tk < 1) return;
+  const keep = {};
+  if(G.meta.keepKin > 0){
+    const frac = G.meta.keepKin * 0.2;
+    for(const u of UPG) if(u.tab==='kin') keep[u.id] = Math.floor(G.run.lvl[u.id]*frac);
+  }
+  G.meta.best = Math.max(G.meta.best, G.run.score);
+  G.meta.tokens += tk;
+  G.meta.machines++;
+  G.run = freshRun(G.meta);
+  for(const k in keep) G.run.lvl[k] = keep[k];
+  derive(); buildTable();
+  G.balls = []; FX.parts.length=0; FX.rings.length=0; FX.texts.length=0;
+  feed(1); scoreWin=0;
+  buildPanel(); save();
+  modal('NEW MACHINE ONLINE',
+    'You racked the old table and rolled out <b>'+cabName()+'</b>.<br><br>'+
+    'Earned <b>'+fmt(tk)+' Tokens</b> (total '+fmt(G.meta.tokens)+').<br>'+
+    'The new playfield uses a fresh layout seed, so the anchor slots sit differently.<br><br>'+
+    'Spend Tokens on the <b>MACHINE</b> tab \u2014 those perks are permanent.');
+}
+
+function hardReset(){
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+  newGame(); buildPanel(); toast('EVERYTHING ERASED');
+}
+
+/* ---- HUD ---- */
+function hud(){
+  const R=G.run;
+  $('h-score').textContent  = fmt(R.score);
+  $('h-rate').textContent   = fmt(R.rateEMA)+' / sec';
+  $('h-chrome').textContent = fmt(Math.floor(R.chrome));
+  $('h-chsub').textContent  = (R.chrome%1).toFixed(2).slice(1)+' partial';
+  $('h-flow').textContent   = 'x'+R.flow.toFixed(2);
+  $('h-flowsub').textContent= 'cap x'+C.flowCap;
+  $('h-balls').textContent  = G.balls.length+' / '+C.maxBalls;
+  $('h-mach').textContent   = cabName();
+  $('h-tokens').textContent = fmt(G.meta.tokens);
+  $('h-life').textContent   = 'lifetime '+fmt(G.meta.lifetime);
+  $('flowfill').style.width = Math.min(100, (R.flow/C.flowCap)*100)+'%';
+}
+
+/* ---- modal ---- */
+function modal(title, body){
+  $('mtitle').innerHTML = title; $('mbody').innerHTML = body; $('modal').classList.add('on');
+}
+$('mclose').addEventListener('click', ()=>$('modal').classList.remove('on'));
+
+/* =========================================================================
+   9. PERSISTENCE
+   ========================================================================= */
+let canStore = false;
+try{ localStorage.setItem('__nf','1'); localStorage.removeItem('__nf'); canStore = true; }catch(e){ canStore = false; }
+
+function serialize(){
+  const R=G.run;
+  return {
+    v: SAVE_VER, t: Date.now(),
+    meta: G.meta,
+    run: {
+      score:R.score, chrome:R.chrome, lvl:R.lvl, seed:R.seed,
+      flow:R.flow, lanes:R.lanes, kickCharge:R.kickCharge, rateEMA:R.rateEMA,
+      jackpots:R.jackpots, pops:R.pops, hits:R.hits, drains:R.drains
+    },
+    ui: G.ui
+  };
+}
+function save(){
+  if(!canStore) return;
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); }catch(e){}
+}
+function migrate(s){
+  // future schema bumps chain here
+  if(!s.v || s.v > SAVE_VER) return null;
+  return s;
+}
+function apply(s){
+  s = migrate(s); if(!s) return false;
+  const meta = freshMeta();
+  Object.assign(meta, s.meta||{});
+  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false}};
+  Object.assign(G.ui, s.ui||{});
+  const R = s.run||{};
+  const lvl = G.run.lvl;
+  for(const k in (R.lvl||{})) if(k in lvl) lvl[k] = R.lvl[k]|0;
+  G.run.score = +R.score || 0;
+  G.run.chrome = +R.chrome || 0;
+  G.run.seed = R.seed || G.run.seed;
+  G.run.flow = +R.flow || 1;
+  G.run.lanes = Array.isArray(R.lanes)? R.lanes.slice(0,3) : [false,false,false];
+  G.run.kickCharge = +R.kickCharge || 0;
+  G.run.rateEMA = +R.rateEMA || 0;
+  G.run.jackpots=R.jackpots|0; G.run.pops=R.pops|0; G.run.hits=R.hits|0; G.run.drains=R.drains|0;
+  G.run.lvl = lvl;
+  derive(); buildTable(); G.balls = []; feed(1);
+  return true;
+}
+function load(){
+  let raw=null;
+  try{ raw = localStorage.getItem(SAVE_KEY); }catch(e){}
+  if(!raw){ newGame(); return; }
+  let s=null;
+  try{ s = JSON.parse(raw); }catch(e){ s=null; }
+  if(!s || !apply(s)){ newGame(); return; }
+  offline(s.t);
+}
+function offline(then){
+  if(!then) return;
+  const el = Math.max(0, (Date.now()-then)/1000);
+  if(el < 60) return;
+  const eff = Math.min(el, C.offCap);
+  const gained = G.run.rateEMA * eff * C.offEff;
+  const chGained = G.run.rateEMA > 0 ? eff * C.offEff * 0.0016 * C.drainMul : 0;
+  if(gained <= 0 && chGained <= 0) return;
+  G.run.score += gained; G.meta.lifetime += gained; G.run.chrome += chGained;
+  const h = Math.floor(eff/3600), m = Math.floor((eff%3600)/60);
+  modal('WHILE YOU WERE AWAY',
+    'The machine kept running for <b>'+Math.floor(el/3600)+'h '+Math.floor((el%3600)/60)+'m</b>'+
+    (el>C.offCap? ' (banked '+h+'h '+m+'m \u2014 flywheel cap reached)' : '')+'.<br><br>'+
+    'Ghost operator efficiency <b>'+(C.offEff*100).toFixed(0)+'%</b> of '+fmt(G.run.rateEMA)+'/sec.<br><br>'+
+    '&rarr; <b>+'+fmt(gained)+'</b> score<br>&rarr; <b>+'+chGained.toFixed(2)+'</b> chrome');
+}
+
+function exportJSON(){ return JSON.stringify(serialize(), null, 2); }
+function importJSON(txt){
+  if(!txt || !txt.trim()){ toast('NOTHING TO IMPORT'); return; }
+  let s=null;
+  try{ s = JSON.parse(txt); }catch(e){ toast('INVALID JSON'); return; }
+  if(apply(s)){ save(); buildPanel(); toast('SAVE IMPORTED'); }
+  else toast('UNRECOGNISED SAVE');
+}
+function download(){
+  const blob = new Blob([exportJSON()], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'neonflux-save.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  toast('FILE DOWNLOADED');
+}
+
+/* =========================================================================
+   10. INPUT
+   ========================================================================= */
+function tablePos(ev){
+  const r = cv.getBoundingClientRect();
+  return [ (ev.clientX-r.left)/r.width*TW, (ev.clientY-r.top)/r.height*TH ];
+}
+cv.addEventListener('pointerdown', ev=>{
+  ev.preventDefault();
+  const p = tablePos(ev);
+  // ball flick first
+  for(const b of G.balls){
+    if(Math.hypot(b.x-p[0], b.y-p[1]) < b.r+16){
+      b.vy -= 620; b.vx += (Math.random()*2-1)*220;
+      burst(b.x,b.y,14,b.hue,3.5); return;
+    }
+  }
+  // bumper overcharge
+  for(let k=0;k<T.bumpers.length;k++){
+    const q=T.bumpers[k];
+    if(Math.hypot(q.x-p[0], q.y-p[1]) < q.r+8){
+      q.charge = C.chargeMax - 1;
+      onBumper(q, k, {x:q.x,y:q.y,vx:0,vy:0,energy:0}, 300);
+      return;
+    }
+  }
+  ring(p[0],p[1],4,34,200,0.35,2);
+});
+window.addEventListener('keydown', ev=>{
+  if(ev.code==='Space'){ ev.preventDefault(); feed(1); }
+});
+
+/* =========================================================================
+   11. MAIN LOOP
+   ========================================================================= */
+let acc = 0, last = performance.now(), emaT = 0, uiT = 0, saveT = 0, abT = 0;
+
+function frame(now){
+  let dt = (now - last)/1000; last = now;
+  if(dt > 0.25) dt = 0.25;                    // tab was hidden / stall
+  const sdt = dt * timeScale;
+
+  acc += sdt;
+  let steps = 0;
+  while(acc >= DT && steps < MAXSUB){ physics(DT); acc -= DT; steps++; }
+  if(steps === MAXSUB) acc = 0;
+  stepFX(dt);
+
+  // score-rate EMA (drives offline earnings)
+  emaT += dt;
+  if(emaT >= 0.5){
+    const inst = scoreWin/emaT; scoreWin = 0; emaT = 0;
+    G.run.rateEMA = G.run.rateEMA*0.85 + inst*0.15;
+  }
+
+  abT += dt; if(abT > 0.25){ abT = 0; autobuyTick(); }
+
+  render();
+
+  uiT += dt;
+  if(uiT > 0.1){ uiT = 0; hud(); refreshPanel(); }
+
+  if(toastT > 0){ toastT -= dt; if(toastT <= 0) $('toast').classList.remove('on'); }
+
+  saveT += dt; if(saveT > 10){ saveT = 0; save(); }
+
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================================
+   12. BOOT
+   ========================================================================= */
+load();
+buildPanel();
+hud();
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) save(); });
+window.addEventListener('beforeunload', save);
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
