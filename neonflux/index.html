@@ -67,6 +67,14 @@
     position:absolute; top:8px; left:10px; font-size:10px; color:#4d5a86; line-height:1.55;
     pointer-events:none; text-shadow:0 0 6px #000;
   }
+  #fmode{
+    position:absolute; top:8px; right:10px; padding:6px 11px; font:inherit; font-size:10px;
+    font-weight:700; letter-spacing:.09em; cursor:pointer; border-radius:5px;
+    background:rgba(9,14,30,.85);
+    border:1px solid #2f7fa8; color:var(--cy); text-shadow:0 0 8px currentColor;
+  }
+  #fmode:hover{border-color:#4ec3e8; background:rgba(16,26,52,.92)}
+  #fmode.man{border-color:#8a6a1f; color:var(--ye)}
 
   /* ---------- panel ---------- */
   #tabs{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px}
@@ -176,10 +184,8 @@
     </div>
     <div id="stage">
       <canvas id="table" width="600" height="900"></canvas>
-      <div id="tips">
-        CLICK bumper &rarr; overcharge &nbsp;|&nbsp; CLICK ball &rarr; flick<br>
-        SPACE &rarr; feed ball &nbsp;|&nbsp; FLOW rises when you hit a <i>different</i> target
-      </div>
+      <button id="fmode">FLIPPERS: AUTO</button>
+      <div id="tips"></div>
       <div id="flowbar"><div id="flowfill"></div></div>
     </div>
   </div>
@@ -339,10 +345,10 @@ const UPG = [
 
   // ---- AUTOMATION (chrome) ----
   {id:'flipReach',  tab:'aut', cur:'c', name:'FLIPPER SENSORS',  base:3,   g:1.7,  max:14,
-   d:'Auto-flippers detect approaching balls from further away and fire more reliably.',
+   d:'AUTO mode only: auto-flippers detect approaching balls from further away and fire more reliably. Does nothing while you are driving the flippers yourself.',
    e:c=>'reach '+c.flipReach.toFixed(0)+'px'},
   {id:'flipPow',    tab:'aut', cur:'c', name:'FLIPPER SOLENOID', base:4,   g:1.75, max:20,
-   d:'Auto-flippers hit harder, launching balls deeper into the table.',
+   d:'Flippers hit harder in both AUTO and MANUAL, launching balls deeper into the table.',
    e:c=>'power x'+c.flipPow.toFixed(2)},
   {id:'refinery',   tab:'aut', cur:'c', name:'SHARD REFINERY',   base:6,   g:1.72, max:25,
    d:'DRAIN MARKET: a draining ball converts its accumulated momentum into Chrome. This refines more of it.',
@@ -415,7 +421,7 @@ function freshMeta(){
 }
 function newGame(){
   const meta = freshMeta();
-  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false}};
+  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false, flipMode:'auto'}};
   derive(); buildTable(); G.balls = []; feed(); 
 }
 
@@ -603,11 +609,16 @@ function physics(dt){
   const R = G.run;
 
   // ---- flippers (kinematic) ----
+  const manual = G.ui.flipMode === 'manual';
   for(const key of ['flipL','flipR']){
     const f = T[key], spec = (key==='flipL')?FLIP.L:FLIP.R;
     f.pa = f.a;
     let want = spec.rest;
-    if(f.cd > 0){ f.cd -= dt; want = spec.fire; }
+    if(manual){
+      // player drives it directly; the cooldown gate does not apply
+      if(held[key==='flipL' ? 'L' : 'R']) want = spec.fire;
+    }
+    else if(f.cd > 0){ f.cd -= dt; want = spec.fire; }
     else {
       // auto-fire when a descending ball enters reach on this side
       for(const b of G.balls){
@@ -1121,13 +1132,14 @@ function render(){
   }
 
   // ---- flippers ----
+  const fHue = G.ui.flipMode==='manual' ? 45 : 200;   // gold when you have control
   for(const key of ['flipL','flipR']){
     const f=T[key], spec=(key==='flipL')?FLIP.L:FLIP.R;
     const ex=spec.px+Math.cos(f.a)*spec.len, ey=spec.py+Math.sin(f.a)*spec.len;
     const act = Math.abs(f.om)>1;
-    ctx.strokeStyle = act? '#ffffff' : hsl(200,90,64);
+    ctx.strokeStyle = act? '#ffffff' : hsl(fHue,90,64);
     ctx.lineWidth=13; ctx.lineCap='round';
-    ctx.shadowColor=hsl(200,100,60); ctx.shadowBlur= act?30:14;
+    ctx.shadowColor=hsl(fHue,100,60); ctx.shadowBlur= act?30:14;
     ctx.beginPath(); ctx.moveTo(spec.px,spec.py); ctx.lineTo(ex,ey); ctx.stroke();
     ctx.shadowBlur=0;
     ctx.fillStyle='#0b1128'; ctx.beginPath(); ctx.arc(spec.px,spec.py,5,0,6.283); ctx.fill();
@@ -1280,13 +1292,21 @@ function buildPanel(){
     }
   }
   else if(tab==='sav'){
+    h += '<div class="sect">CONTROL</div>';
+    h += '<div class="kv"><span>Flippers</span><span data-kv="mode">AUTO</span></div>';
+    h += '<div class="kv"><span>Balls in play</span><span data-kv="balls">0</span></div>';
+    h += '<div class="kv"><span>FLOW</span><span data-kv="flow">x1.00</span></div>';
+    h += '<p class="hint">Toggle with the button on the table or press <b>M</b>. In MANUAL, <b>Z</b>/<b>&larr;</b> and <b>X</b>/<b>&rarr;</b> drive the flippers and the auto-sensors stand down. Flippers turn gold while you have control. Switching tabs away hands them back to the machine so your offline rate never collapses.</p>';
     h += '<div class="sect">SESSION</div>';
-    h += '<div class="kv"><span>Target hits</span><span>'+fmt(G.run.hits)+'</span></div>';
-    h += '<div class="kv"><span>Bumper pops</span><span>'+fmt(G.run.pops)+'</span></div>';
-    h += '<div class="kv"><span>Jackpots</span><span>'+fmt(G.run.jackpots)+'</span></div>';
-    h += '<div class="kv"><span>Balls drained</span><span>'+fmt(G.run.drains)+'</span></div>';
-    h += '<div class="kv"><span>Best score</span><span>'+fmt(G.meta.best)+'</span></div>';
+    h += '<div class="kv"><span>Target hits</span><span data-kv="hits">0</span></div>';
+    h += '<div class="kv"><span>Bumper pops</span><span data-kv="pops">0</span></div>';
+    h += '<div class="kv"><span>Jackpots</span><span data-kv="jacks">0</span></div>';
+    h += '<div class="kv"><span>Balls drained</span><span data-kv="drains">0</span></div>';
+    h += '<div class="kv"><span>Chrome (exact)</span><span data-kv="chrome">0</span></div>';
+    h += '<div class="kv"><span>Best score</span><span data-kv="best">0</span></div>';
+    h += '<div class="sect">DIAGNOSTICS</div>';
     h += '<div class="kv"><span>Storage</span><span>'+(canStore?'localStorage':'session only')+'</span></div>';
+    h += '<div class="kv"><span>Cabinet</span><span>'+cabName()+'</span></div>';
     h += '<div class="sect">SAVE DATA</div>';
     h += '<button class="mini" id="btn-save">SAVE NOW</button>'+
          '<button class="mini" id="btn-exp">EXPORT JSON</button>'+
@@ -1304,6 +1324,20 @@ function buildPanel(){
 }
 
 function cabName(){ const i=G.meta.machines; return 'Cabinet '+(CAB[i]||('Mk '+(i+1))); }
+
+// Live values for the DATA tab. refreshPanel() rewrites any [data-kv] span from
+// this table at the UI tick, so these readouts are no longer frozen at render.
+const KV = {
+  mode:   ()=> G.ui.flipMode==='manual' ? 'MANUAL' : 'AUTO',
+  balls:  ()=> G.balls.length+' / '+C.maxBalls,
+  flow:   ()=> 'x'+G.run.flow.toFixed(2)+'  (cap x'+C.flowCap+')',
+  hits:   ()=> fmt(G.run.hits),
+  pops:   ()=> fmt(G.run.pops),
+  jacks:  ()=> fmt(G.run.jackpots),
+  drains: ()=> fmt(G.run.drains),
+  chrome: ()=> G.run.chrome.toFixed(2),
+  best:   ()=> fmt(Math.max(G.meta.best, G.run.score))
+};
 
 function refreshPanel(){
   // cheap in-place refresh of affordability + effect text for upgrade rows
@@ -1325,6 +1359,13 @@ function refreshPanel(){
     const lv=G.meta[p.id], mx=lv>=p.max, cst=mcost(p);
     el.classList.toggle('max', mx);
     el.classList.toggle('no', !mx && G.meta.tokens < cst);
+  }
+  const kvs = panel.querySelectorAll('[data-kv]');
+  for(const el of kvs){
+    const k = el.getAttribute('data-kv'), fn = KV[k];
+    if(!fn) continue;
+    el.textContent = fn();
+    if(k === 'mode') el.style.color = G.ui.flipMode==='manual' ? 'var(--ye)' : 'var(--cy)';
   }
 }
 
@@ -1477,7 +1518,7 @@ function apply(s){
   s = migrate(s); if(!s) return false;
   const meta = freshMeta();
   Object.assign(meta, s.meta||{});
-  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false}};
+  G = {meta: meta, run: freshRun(meta), ui:{tab:'kin', autobuy:false, flipMode:'auto'}};
   Object.assign(G.ui, s.ui||{});
   const R = s.run||{};
   const lvl = G.run.lvl;
@@ -1566,9 +1607,47 @@ cv.addEventListener('pointerdown', ev=>{
   }
   ring(p[0],p[1],4,34,200,0.35,2);
 });
+/* ---- flipper mode: AUTO (table plays itself) vs MANUAL (you play) ---- */
+const KEY_L = ['KeyZ','ArrowLeft'], KEY_R = ['KeyX','ArrowRight'];
+const held = {L:false, R:false};   // live key state, deliberately not persisted
+
+function clearHeld(){ held.L = false; held.R = false; }
+
+function setMode(m, quiet){
+  G.ui.flipMode = m;
+  if(m === 'auto') clearHeld();
+  const b = $('fmode');
+  if(b){
+    b.textContent = 'FLIPPERS: ' + (m==='manual' ? 'MANUAL' : 'AUTO');
+    b.classList.toggle('man', m==='manual');
+  }
+  updTips();
+  if(!quiet) toast(m==='manual' ? 'MANUAL \u2014 Z / X or \u2190 / \u2192' : 'AUTO \u2014 the table plays itself');
+}
+function toggleMode(){ setMode(G.ui.flipMode==='manual' ? 'auto' : 'manual'); }
+
+function updTips(){
+  const t = $('tips'); if(!t) return;
+  t.innerHTML = (G.ui.flipMode==='manual'
+      ? 'Z / \u2190 left flipper &nbsp;|&nbsp; X / \u2192 right flipper &nbsp;|&nbsp; M &rarr; back to AUTO'
+      : 'CLICK bumper &rarr; overcharge &nbsp;|&nbsp; CLICK ball &rarr; flick &nbsp;|&nbsp; M &rarr; take the flippers')
+    + '<br>SPACE &rarr; feed ball &nbsp;|&nbsp; FLOW rises when you hit a <i>different</i> target';
+}
+
+$('fmode').addEventListener('click', toggleMode);
+
 window.addEventListener('keydown', ev=>{
+  if(KEY_L.indexOf(ev.code) >= 0){ ev.preventDefault(); held.L = true; return; }
+  if(KEY_R.indexOf(ev.code) >= 0){ ev.preventDefault(); held.R = true; return; }
+  if(ev.code==='KeyM'){ ev.preventDefault(); toggleMode(); return; }
   if(ev.code==='Space'){ ev.preventDefault(); feed(1); }
 });
+window.addEventListener('keyup', ev=>{
+  if(KEY_L.indexOf(ev.code) >= 0) held.L = false;
+  if(KEY_R.indexOf(ev.code) >= 0) held.R = false;
+});
+// Losing focus with a key down would otherwise freeze a flipper mid-swing.
+window.addEventListener('blur', clearHeld);
 
 /* =========================================================================
    11. MAIN LOOP
@@ -1611,9 +1690,18 @@ function frame(now){
    12. BOOT
    ========================================================================= */
 load();
+setMode(G.ui.flipMode === 'manual' ? 'manual' : 'auto', true);
 buildPanel();
 hud();
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) save(); });
+// Idling in MANUAL would collapse rateEMA and gut offline earnings, so hand the
+// flippers back to the machine whenever the tab goes away.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    clearHeld();
+    if(G.ui.flipMode === 'manual') setMode('auto');
+    save();
+  }
+});
 window.addEventListener('beforeunload', save);
 requestAnimationFrame(frame);
 
