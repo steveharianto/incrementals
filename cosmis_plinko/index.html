@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="snowflake-source" content="cortex-agent-authored" />
+<title>Cosmic Plinko — Pachinko Galaxy</title>
+<script type="application/json" id="snowflake-report-metadata">
+{
+  "generated": "2026-08-05",
+  "intent": "Cosmic Plinko / Pachinko Galaxy - single-file incremental physics game. Meteorites fall through a gravitational board of planets, moons, black holes and nebulae; payout is earned in flight via slingshots, orbital loops and wormhole chains rather than on landing.",
+  "dataSources": [],
+  "sections": [
+    { "id": "stage", "title": "Physics board",
+      "dataSources": [],
+      "producerNotes": "Pure client-side canvas simulation, no Snowflake data. Fixed 120Hz accumulator, softened inverse-square gravity with a near-circular orbit assist. All balance tables live in the CONFIG block at the top of the inline script. Two invariants must hold or the board deadlocks: (1) the inward sink is applied all the way to the body surface - if it stops short, meteorites settle into stable ballistic orbits and never score; (2) the ORBIT_TTL wind failsafe guarantees no meteorite can occupy a slot forever." },
+    { "id": "panel", "title": "Economy UI",
+      "dataSources": [],
+      "producerNotes": "DOM overlay (not canvas-drawn) with dirty-flag text updates. Persists to localStorage under cosmicPlinko.save.v1 with versioned migrate() and JSON export/import. Degrades to memory-only if storage is blocked." }
+  ]
+}
+</script>
+<style>
+:root{
+  color-scheme: dark;
+  --void:#04050e; --ink:#e8ecff; --dim:#8d97c4; --dim2:#5d6690;
+  --cyan:#5ce6ff; --violet:#a77bff; --magenta:#ff6ad5; --gold:#ffd166; --green:#7cffcb;
+  --line:rgba(120,140,220,.18); --panel:rgba(10,13,30,.82);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(1200px 800px at 30% -10%, #101634 0%, var(--void) 60%) fixed, var(--void);
+  color:var(--ink);
+  font:13px/1.45 -apple-system,system-ui,"Segoe UI",Inter,sans-serif;
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+}
+#app{display:flex;flex-direction:column;height:100%}
+
+#hud{
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  padding:7px 12px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(14,18,40,.95),rgba(8,10,24,.7));z-index:5;
+}
+#hud .brand{
+  font-weight:700;letter-spacing:.14em;font-size:11px;text-transform:uppercase;
+  background:linear-gradient(90deg,var(--cyan),var(--violet),var(--magenta));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  padding-right:8px;border-right:1px solid var(--line);
+}
+.stat{display:flex;flex-direction:column;line-height:1.15;padding:0 7px;min-width:62px}
+.stat b{font-size:14px;font-variant-numeric:tabular-nums}
+.stat span{font-size:9px;text-transform:uppercase;letter-spacing:.11em;color:var(--dim2)}
+.stat.c b{color:var(--cyan)} .stat.v b{color:var(--violet)}
+.stat.g b{color:var(--gold)} .stat.m b{color:var(--magenta)} .stat.n b{color:var(--green)}
+#hud .sp{flex:1}
+.hbtn{
+  background:rgba(90,120,220,.12);border:1px solid var(--line);color:var(--ink);
+  border-radius:7px;padding:5px 10px;font:inherit;font-size:11px;cursor:pointer;
+  transition:background .15s,border-color .15s,transform .08s;
+}
+.hbtn:hover{background:rgba(120,150,255,.22);border-color:rgba(140,170,255,.4)}
+.hbtn:active{transform:translateY(1px)}
+.hbtn.on{background:rgba(124,255,203,.16);border-color:rgba(124,255,203,.45);color:var(--green)}
+.hbtn:disabled{opacity:.35;cursor:default}
+
+main{display:flex;flex:1;min-height:0}
+#stageWrap{flex:1;min-width:0;position:relative;display:flex;align-items:center;justify-content:center;padding:8px}
+#stage{position:relative;height:100%;aspect-ratio:1000/1400;max-width:100%}
+canvas{display:block;width:100%;height:100%;border-radius:12px;
+  box-shadow:0 0 0 1px rgba(120,150,255,.14), 0 20px 70px -30px rgba(90,120,255,.5);
+  touch-action:none;cursor:crosshair}
+#stage.edit canvas{cursor:move}
+#combo{position:absolute;left:12px;top:10px;pointer-events:none;
+  font-variant-numeric:tabular-nums;text-shadow:0 0 18px rgba(90,200,255,.6)}
+#combo div{font-size:11px;color:var(--dim);letter-spacing:.06em}
+#combo b{font-size:22px;color:var(--cyan)}
+#hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:11px;
+  color:var(--dim2);pointer-events:none;transition:opacity .6s}
+#toast{position:absolute;left:50%;top:16px;transform:translateX(-50%);
+  background:rgba(12,16,36,.94);border:1px solid rgba(140,170,255,.35);
+  padding:9px 16px;border-radius:9px;font-size:12px;opacity:0;
+  transition:opacity .35s,transform .35s;pointer-events:none;max-width:80%;text-align:center;
+  box-shadow:0 12px 40px -12px rgba(0,0,0,.9)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(6px)}
+
+#panel{width:352px;flex:none;display:flex;flex-direction:column;
+  border-left:1px solid var(--line);background:var(--panel)}
+#tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+#tabs button{flex:1;background:none;border:0;border-bottom:2px solid transparent;color:var(--dim2);
+  font:inherit;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding:9px 2px;cursor:pointer;transition:color .15s,border-color .15s}
+#tabs button:hover{color:var(--ink)}
+#tabs button.on{color:var(--cyan);border-bottom-color:var(--cyan);background:rgba(92,230,255,.06)}
+.tab{display:none;overflow-y:auto;overflow-x:hidden;flex:1;padding:10px}
+.tab.on{display:block}
+.tab::-webkit-scrollbar{width:9px}
+.tab::-webkit-scrollbar-thumb{background:rgba(120,150,255,.22);border-radius:9px}
+
+.sect{font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim2);
+  margin:12px 2px 6px;display:flex;align-items:center;gap:7px}
+.sect:first-child{margin-top:2px}
+.sect::after{content:"";flex:1;height:1px;background:var(--line)}
+.note{font-size:11px;color:var(--dim);margin:4px 2px 8px;line-height:1.5}
+
+.row{width:100%;display:flex;gap:9px;align-items:center;text-align:left;
+  background:rgba(255,255,255,.028);border:1px solid var(--line);border-radius:9px;
+  padding:8px 9px;margin-bottom:6px;color:var(--ink);font:inherit;cursor:pointer;
+  transition:background .13s,border-color .13s,transform .07s}
+.row:hover{background:rgba(120,150,255,.11);border-color:rgba(140,170,255,.32)}
+.row:active{transform:translateY(1px)}
+.row.no{opacity:.44;cursor:default}
+.row.no:hover{background:rgba(255,255,255,.028);border-color:var(--line)}
+.row.max{opacity:.6;cursor:default}
+.row .ic{width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;
+  font-size:12px;background:rgba(120,150,255,.1);border:1px solid var(--line)}
+.row .bd{flex:1;min-width:0}
+.row .nm{font-size:12px;font-weight:600;display:flex;gap:6px;align-items:baseline}
+.row .lv{font-size:10px;color:var(--cyan);font-variant-numeric:tabular-nums}
+.row .ds{font-size:10.5px;color:var(--dim);margin-top:1px}
+.row .cs{font-size:11px;font-variant-numeric:tabular-nums;color:var(--gold);flex:none;text-align:right}
+.row .cs.dust{color:var(--violet)}
+.row .cs.de{color:var(--magenta)}
+.row.sel{border-color:rgba(124,255,203,.5);background:rgba(124,255,203,.09)}
+
+.bar{height:5px;border-radius:5px;background:rgba(255,255,255,.07);overflow:hidden;margin:6px 2px 10px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--magenta));width:0}
+.fld{display:flex;align-items:center;gap:9px;margin:6px 2px}
+.fld label{font-size:11px;color:var(--dim);flex:1}
+.fld select,.fld input[type=range]{background:rgba(255,255,255,.05);border:1px solid var(--line);
+  color:var(--ink);border-radius:6px;font:inherit;font-size:11px;padding:3px 6px}
+.fld input[type=range]{padding:0;width:132px}
+textarea{width:100%;height:92px;background:rgba(0,0,0,.45);border:1px solid var(--line);
+  color:var(--dim);border-radius:8px;font:11px/1.4 ui-monospace,Menlo,monospace;padding:7px;resize:vertical}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.big{width:100%;padding:11px;border-radius:10px;border:1px solid rgba(167,123,255,.45);
+  background:linear-gradient(135deg,rgba(167,123,255,.22),rgba(255,106,213,.16));
+  color:var(--ink);font:inherit;font-weight:700;font-size:13px;letter-spacing:.05em;cursor:pointer;
+  text-transform:uppercase;transition:filter .15s,transform .07s}
+.big:hover{filter:brightness(1.25)}
+.big:active{transform:translateY(1px)}
+.big:disabled{opacity:.35;cursor:default;filter:none}
+.danger{border-color:rgba(255,106,133,.4);background:rgba(255,106,133,.14)}
+
+@media (max-width:900px){
+  main{flex-direction:column}
+  #panel{width:100%;border-left:0;border-top:1px solid var(--line);height:44%}
+  #stageWrap{height:56%;padding:4px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header id="hud">
+    <div class="brand">Cosmic&nbsp;Plinko</div>
+    <div class="stat c"><b id="sStardust">0</b><span>Stardust</span></div>
+    <div class="stat"><b id="sRate">0/s</b><span>Accretion</span></div>
+    <div class="stat v"><b id="sDust">0</b><span>Sing. Dust</span></div>
+    <div class="stat m" id="wrapDE" style="display:none"><b id="sDE">0</b><span>Dark Energy</span></div>
+    <div class="stat g"><b id="sMeteors">0</b><span>Meteors</span></div>
+    <div class="stat n"><b id="sChain">x1.00</b><span>Constellation</span></div>
+    <div class="sp"></div>
+    <button class="hbtn" id="btnDilate">Time Dilation</button>
+    <button class="hbtn" id="btnEdit">Edit Board</button>
+    <button class="hbtn" id="btnPause">Pause</button>
+  </header>
+
+  <main>
+    <div id="stageWrap">
+      <div id="stage">
+        <canvas id="game"></canvas>
+        <div id="combo"><div>PEAK IMPACT</div><b id="cPeak">0</b></div>
+        <div id="hint">Drag on the board to fling a meteorite &middot; payout is earned <em>in flight</em></div>
+        <div id="toast"></div>
+      </div>
+    </div>
+
+    <aside id="panel">
+      <nav id="tabs">
+        <button data-tab="upg" class="on">Upgrades</button>
+        <button data-tab="bod">Bodies</button>
+        <button data-tab="brd">Board</button>
+        <button data-tab="crn">Crunch</button>
+        <button data-tab="dat">Data</button>
+      </nav>
+
+      <div class="tab on" id="tab-upg">
+        <div class="sect">Stardust Upgrades</div>
+        <div class="note" id="upgNote"></div>
+        <div id="upgList"></div>
+      </div>
+
+      <div class="tab" id="tab-bod">
+        <div class="sect">Celestial Bodies</div>
+        <div class="note">Level a body to raise its base payout. That base is then multiplied by everything the meteorite earned on the way in.</div>
+        <div id="bodList"></div>
+      </div>
+
+      <div class="tab" id="tab-brd">
+        <div class="sect">Scale Model</div>
+        <div class="fld"><label>Active model</label><select id="modelSel"></select></div>
+        <div class="note" id="modelNote"></div>
+        <div class="sect">Energy Budget</div>
+        <div class="note" id="budNote"></div>
+        <div class="bar"><i id="budBar"></i></div>
+        <div class="sect">Place Body</div>
+        <div class="note">Pick a body, then click the board. Turn on Edit Board to drag bodies around, or to select one for removal.</div>
+        <div id="paletteList"></div>
+        <div class="btnrow">
+          <button class="hbtn" id="btnRemove">Remove Selected</button>
+          <button class="hbtn" id="btnResetBoard">Reset Layout</button>
+        </div>
+        <div class="sect">Satellite Turrets</div>
+        <div class="note" id="turNote"></div>
+        <div id="turList"></div>
+      </div>
+
+      <div class="tab" id="tab-crn">
+        <div class="sect">The Big Crunch</div>
+        <div class="note" id="crnNote"></div>
+        <div class="bar"><i id="crnBar"></i></div>
+        <button class="big" id="btnCrunch">Collapse the Universe</button>
+        <div class="sect">Meta Perks</div>
+        <div id="perkList"></div>
+        <div id="deWrap" style="display:none">
+          <div class="sect">Rule Rewrites &middot; Dark Energy</div>
+          <div class="note">Permanent changes to physics itself. Never lost.</div>
+          <div id="ruleList"></div>
+          <div class="sect">Challenge Modifiers</div>
+          <div class="note">Active modifiers make the run harder and pay Dark Energy on your next qualifying Crunch.</div>
+          <div id="chalList"></div>
+        </div>
+      </div>
+
+      <div class="tab" id="tab-dat">
+        <div class="sect">Settings</div>
+        <div class="fld"><label>Render quality</label>
+          <select id="qSel"><option value="high">High</option><option value="med">Medium</option><option value="low">Low</option></select></div>
+        <div class="fld"><label>Sound</label><button class="hbtn" id="btnMute">On</button></div>
+        <div class="fld"><label>Screen shake</label><button class="hbtn" id="btnMotion">On</button></div>
+        <div class="fld"><label>Show force field</label><button class="hbtn" id="btnField">Off</button></div>
+        <div class="sect">Save Data</div>
+        <div class="note" id="saveNote"></div>
+        <div class="btnrow">
+          <button class="hbtn" id="btnSave">Save Now</button>
+          <button class="hbtn" id="btnExportFile">Export .json</button>
+          <button class="hbtn" id="btnExportText">Show JSON</button>
+          <button class="hbtn" id="btnImportFile">Import File</button>
+        </div>
+        <textarea id="ioBox" placeholder="Paste exported JSON here, then press Import Text."></textarea>
+        <div class="btnrow">
+          <button class="hbtn" id="btnImportText">Import Text</button>
+          <button class="hbtn danger" id="btnWipe">Hard Reset</button>
+        </div>
+        <input type="file" id="fileIn" accept=".json,application/json" style="display:none" />
+        <div class="sect">Statistics</div>
+        <div class="note" id="statNote"></div>
+        <div class="note">Keys: <b>Space</b> pause &middot; <b>E</b> edit &middot; <b>T</b> dilate &middot; <b>S</b> save</div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+'use strict';
+(function(){
+
+/* ==========================================================================
+   CONFIG — every balance number lives here.
+   ========================================================================== */
+const W = 1000, H = 1400;            // world units
+const STEP = 1/120;                  // fixed physics timestep
+const MAX_SUB = 8;                   // substep cap per frame (no death spiral)
+const G_BASE = 5000;                 // gravitational constant baseline
+const WIND = 92;                     // ambient downward accel (world u/s^2)
+const A_CAP = 7000;                  // per-meteor accel clamp
+const V_CAP = 1500;                  // velocity clamp
+const ASSIST = 2.6;                  // near-circular orbit assist strength
+const SINK = 0.014;                  // inward creep, as a fraction of circular speed.
+                                     // dr/r per loop = 2*pi*SINK, so a capture resolves in
+                                     // ~20 loops regardless of scale. MUST be applied all the
+                                     // way to the surface: if it cuts off above the collision
+                                     // radius, meteorites settle into stable ballistic orbits,
+                                     // never score, and the board deadlocks once slots fill.
+const MEDIUM = 0.06;                 // faint interstellar drag, per second. Guarantees global
+                                     // energy dissipation so chaotic high-energy meteorites are
+                                     // eventually captured and resolve naturally. Without it the
+                                     // TTL failsafe becomes the main income source, which arrives
+                                     // in ugly lumps instead of a steady rain of impacts.
+const ORBIT_TTL = 150;               // seconds before the failsafe forces a resolution
+const SLING_RATIO = 1.12;            // exit/entry speed ratio to bank a slingshot
+const CHAIN_WINDOW = 4.0;            // constellation chain memory (s)
+const RES_WINDOW = 2.5;              // moon->parent resonance window (s)
+const BASE_BUDGET = 270;
+const PRESTIGE_MIN = 1e6;            // total run stardust required to Crunch
+const DUST_K = 8, DUST_EXP = 0.42;   // dust = K * (totalRun/PRESTIGE_MIN)^EXP
+const SAVE_KEY = 'cosmicPlinko.save.v1';
+const SAVE_VERSION = 1;
+const MAX_METEOR_HARD = 460, MAX_PART = 1300, MAX_TEXT = 44, TRAIL_MAX = 40;
+
+const BT = {
+  gasGiant : {type:'planet' , r:62, mass:1000, value:24, color:'#ffb45c', name:'Gas Giant'   , cost:22, glyph:'\u25cf'},
+  terran   : {type:'planet' , r:42, mass: 520, value:15, color:'#5ce1c4', name:'Terran World', cost:18, glyph:'\u25cf'},
+  ice      : {type:'planet' , r:40, mass: 480, value:16, color:'#8fbaff', name:'Ice World'   , cost:18, glyph:'\u25cf'},
+  moon     : {type:'moon'   , r:12, mass:  70, value: 7, color:'#e8eaf6', name:'Moon'        , cost: 6, glyph:'\u25cb'},
+  neutron  : {type:'neutron', r:13, mass:1600, value:44, color:'#fff3b0', name:'Neutron Star', cost:30, glyph:'\u2726'},
+  blackhole: {type:'blackhole',r:26,mass:4400, value: 0, color:'#a77bff', name:'Black Hole'  , cost:40, glyph:'\u2b24'},
+  whitehole: {type:'whitehole',r:20,mass:-900, value: 0, color:'#ffffff', name:'White Hole'  , cost: 0, glyph:'\u25cc'},
+  nebDrag  : {type:'nebula' , r:165,mass:0, kind:'drag',value:0,color:'#3f7fd8', name:'Drag Nebula', cost:18, glyph:'\u2601'},
+  nebIon   : {type:'nebula' , r:130,mass:0, kind:'ion' ,value:0,color:'#e04aa0', name:'Ion Nebula' , cost:24, glyph:'\u2248'},
+  pulsar   : {type:'pulsar' , r:16, mass: 320, value:20, color:'#7cffcb', name:'Pulsar'      , cost:26, glyph:'\u25c8'},
+  asteroid : {type:'asteroid',r: 9, mass:  26, value: 6, color:'#9aa4b2', name:'Asteroid'    , cost: 4, glyph:'\u00b7'},
+  magnet   : {type:'magnet' , r: 10,mass: 340, value: 0, color:'#c7a8ff', name:'DM Magnet'   , cost: 0, glyph:'\u25c6'}
+};
+const SOLID   = {planet:1, moon:1, neutron:1, asteroid:1, pulsar:1};
+const GRAVITY = {planet:1, moon:1, neutron:1, asteroid:1, pulsar:1, blackhole:1, whitehole:1, magnet:1};
+const ASSISTS = {planet:1, neutron:1, blackhole:1, magnet:1};
+
+const MODELS = {
+  inner: { name:'Inner System', perk:null,
+    desc:'Dense and fast. Wide drag nebulae make orbital capture easy — the friendly starting geometry.',
+    bodies:[
+      ['nebDrag',470,810],['nebDrag',250,565],['nebIon',770,505],
+      ['gasGiant',500,1040],['terran',245,760],['ice',755,760],
+      ['moon',245,760,'p'],['moon',755,760,'p'],
+      ['neutron',500,545],['pulsar',500,250],
+      ['blackhole',185,985],['whitehole',830,300],
+      ['asteroid',150,1318],['asteroid',330,1330],['asteroid',505,1322],['asteroid',680,1330],['asteroid',855,1318]
+    ]},
+  binary: { name:'Binary Star', perk:'m_binary',
+    desc:'Two neutron masses at mid-board throw meteorites into chaotic figure-eights. Enormous slingshot potential, low predictability.',
+    bodies:[
+      ['nebDrag',500,690],['nebIon',500,1000],
+      ['neutron',330,640],['neutron',670,640],
+      ['gasGiant',500,1180],['terran',150,1010],['ice',850,1010],
+      ['moon',150,1010,'p'],['moon',850,1010,'p'],
+      ['pulsar',500,300],
+      ['asteroid',260,1330],['asteroid',500,1338],['asteroid',740,1330]
+    ]},
+  core: { name:'Galactic Core', perk:'m_core',
+    desc:'A supermassive centre with two wormhole pairs. Transit chains are the whole economy here.',
+    bodies:[
+      ['nebDrag',500,520],['nebDrag',500,1080],['nebIon',180,760],['nebIon',820,760],
+      ['blackhole',500,760],['whitehole',500,180],
+      ['blackhole',180,1150],['whitehole',820,1150],
+      ['gasGiant',250,1020],['gasGiant',750,1020],
+      ['neutron',380,420],['neutron',620,420],
+      ['asteroid',120,1330],['asteroid',380,1336],['asteroid',620,1336],['asteroid',880,1330]
+    ]},
+  void: { name:'The Void', perk:'m_void',
+    desc:'Almost empty. Three tiny heavy masses inside one vast nebula produce absurdly long, slow, beautiful orbits.',
+    bodies:[
+      ['nebDrag',500,700],['nebDrag',500,1010],
+      ['neutron',500,620],['neutron',300,930],['neutron',700,930],
+      ['gasGiant',500,1250],
+      ['blackhole',500,300],['whitehole',500,1120]
+    ]}
+};
+
+const UPGRADES = [
+  {id:'spawn' ,g:'\u2604',name:'Meteor Spawn Rate'     ,ds:'+0.14 meteorites / second'            ,base:15   ,gr:1.28,max:220},
+  {id:'mass'  ,g:'\u26a1',name:'Meteorite Mass'        ,ds:'+12% points, +4% cosmic wind'         ,base:40   ,gr:1.30,max:220},
+  {id:'aero'  ,g:'\u2191',name:'Aerobraking'           ,ds:'-5% cosmic wind (offsets Mass)'       ,base:130  ,gr:1.24,max:12},
+  {id:'grav'  ,g:'\u2735',name:'Gravitational Constant',ds:'+7% G — everything curves harder'     ,base:60   ,gr:1.27,max:70},
+  {id:'value' ,g:'\u25c9',name:'Planetary Enrichment'  ,ds:'+18% base value of every body'        ,base:80   ,gr:1.31,max:220},
+  {id:'cap'   ,g:'\u2637',name:'Meteor Capacity'       ,ds:'+8 concurrent meteorites'             ,base:200  ,gr:1.40,max:48},
+  {id:'retain',g:'\u21bb',name:'Resonant Coupling'     ,ds:'+0.18 multiplier per orbital loop'    ,base:250  ,gr:1.30,max:60},
+  {id:'sling' ,g:'\u27a6',name:'Slingshot Efficiency'  ,ds:'+10% per banked slingshot stack'      ,base:180  ,gr:1.30,max:70},
+  {id:'worm'  ,g:'\u25cc',name:'Wormhole Stability'    ,ds:'+1 multiplied wormhole transit'       ,base:420  ,gr:1.55,max:12},
+  {id:'neb'   ,g:'\u2601',name:'Nebula Density'        ,ds:'+15% drag and ion field strength'     ,base:150  ,gr:1.30,max:34},
+  {id:'trail' ,g:'\u2734',name:'Trail Persistence'     ,ds:'Longer trails, +1% points'            ,base:90   ,gr:1.34,max:28},
+  {id:'turret',g:'\u2698',name:'Satellite Turrets'     ,ds:'+1 aimable auto-launcher'             ,base:800  ,gr:2.10,max:6},
+  {id:'magnet',g:'\u25c6',name:'Dark Matter Magnets'   ,ds:'+1 placeable invisible attractor'     ,base:1500 ,gr:2.60,max:4},
+  {id:'tidal' ,g:'\u2742',name:'Tidal Fracture'        ,ds:'+8% chance to split into 3 at the Roche limit',base:2500,gr:1.55,max:10},
+  {id:'offline',g:'\u23f2',name:'Offline Accretion'    ,ds:'+10% of accretion while away'         ,base:1000 ,gr:1.90,max:5}
+];
+
+const PERKS = [
+  {id:'field'     ,g:'\u2295',name:'Permanent Gravitational Field',ds:'Board-wide central well; even a fresh run curves',cost:2 ,gr:1.8,max:8},
+  {id:'core'      ,g:'\u2638',name:'Multi-Core Spawner'           ,ds:'+1 spawn point'                                  ,cost:3 ,gr:2.4,max:3},
+  {id:'inherit'   ,g:'\u267b',name:'Cosmic Inheritance'           ,ds:'Keep 20% of upgrade levels through the Crunch'   ,cost:5 ,gr:2.2,max:4},
+  {id:'accrete'   ,g:'\u2699',name:'Baseline Accretion'           ,ds:'Passive stardust even with an empty board'       ,cost:2 ,gr:1.7,max:15},
+  {id:'dust'      ,g:'\u26ab',name:'Singularity Refinement'       ,ds:'+12% Singularity Dust per Crunch'                ,cost:4 ,gr:1.9,max:15},
+  {id:'power'     ,g:'\u2739',name:'Cosmic Legacy'                ,ds:'+25% all points, permanently'                    ,cost:3 ,gr:1.8,max:25},
+  {id:'budget'    ,g:'\u2637',name:'Expanded Manifold'            ,ds:'+30 board energy budget'                         ,cost:3 ,gr:1.7,max:12},
+  {id:'magnetkeep',g:'\u25c6',name:'Persistent Magnets'           ,ds:'Dark matter magnets survive the Crunch'          ,cost:6 ,max:1},
+  {id:'dilation'  ,g:'\u23f3',name:'Time Dilation'                ,ds:'Unlock slow motion — no score penalty'           ,cost:4 ,max:1},
+  {id:'m_binary'  ,g:'\u2735',name:'Model: Binary Star'           ,ds:'Unlock a new scale model'                        ,cost:8 ,max:1},
+  {id:'m_core'    ,g:'\u2b24',name:'Model: Galactic Core'         ,ds:'Unlock a new scale model'                        ,cost:20,max:1},
+  {id:'m_void'    ,g:'\u25cc',name:'Model: The Void'              ,ds:'Unlock a new scale model'                        ,cost:45,max:1},
+  {id:'bigbang'   ,g:'\u2734',name:'Second Big Bang'              ,ds:'Unlock Dark Energy and challenge modifiers'      ,cost:100,max:1}
+];
+
+const RULES = [
+  {id:'nodecay' ,name:'Eternal Orbits'      ,ds:'Orbits decay 3x slower — far more loops per capture',cost:3},
+  {id:'resonate',name:'Harmonic Resonance'  ,ds:'Resonance x3 becomes x6, window 5s'                 ,cost:4},
+  {id:'infworm' ,name:'Unbounded Wormholes' ,ds:'Wormhole transit cap removed entirely'              ,cost:5},
+  {id:'gravity2',name:'Second-Order Gravity',ds:'+50% G and the acceleration clamp is lifted'        ,cost:6},
+  {id:'twin'    ,name:'Twin Genesis'        ,ds:'Every spawn emits two meteorites'                   ,cost:8}
+];
+const CHALLENGES = [
+  {id:'vacuum',name:'Vacuum'          ,ds:'Nebulae are inert'             ,de:2},
+  {id:'sparse',name:'Sparse Cosmos'   ,ds:'Spawn rate halved'             ,de:2},
+  {id:'sealed',name:'Sealed Horizons' ,ds:'Wormholes grant no multiplier' ,de:3},
+  {id:'gale'  ,name:'Solar Gale'      ,ds:'Cosmic wind x2.5'              ,de:3}
+];
+
+/* ==========================================================================
+   UTIL
+   ========================================================================== */
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const TAU=Math.PI*2;
+const SUF=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','Ud','Dd'];
+function fmt(n){
+  if(!isFinite(n)) return '\u221e';
+  if(n<0) return '-'+fmt(-n);
+  if(n<1000) return n<10 ? String(Math.round(n*10)/10) : String(Math.floor(n));
+  let t=0; while(n>=1000 && t<SUF.length-1){ n/=1000; t++; }
+  if(t>=SUF.length-1 && n>=1000) return n.toExponential(2).replace('e+','e');
+  return (n<10?n.toFixed(2):n<100?n.toFixed(1):String(Math.floor(n)))+SUF[t];
+}
+function fmtTime(s){
+  s=Math.floor(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60);
+  return h>0 ? h+'h '+m+'m' : m>0 ? m+'m '+(s%60)+'s' : s+'s';
+}
+function normA(a){ while(a>Math.PI)a-=TAU; while(a<-Math.PI)a+=TAU; return a; }
+// Closest approach of segment P->Q to a circle. Endpoint-only collision tests tunnel:
+// near a black hole a meteorite reaches ~1500 u/s, which is 12 units of travel per
+// substep against a 26-unit horizon, so it can straddle the target indefinitely.
+function segHit(px,py,qx,qy,bx,by,rad){
+  const dx=qx-px, dy=qy-py, l2=dx*dx+dy*dy;
+  let t = l2>0 ? ((bx-px)*dx+(by-py)*dy)/l2 : 0;
+  if(t<0) t=0; else if(t>1) t=1;
+  const cx=px+dx*t-bx, cy=py+dy*t-by;
+  return cx*cx+cy*cy < rad*rad;
+}
+const $=id=>document.getElementById(id);
+
+/* ==========================================================================
+   STATE
+   ========================================================================== */
+let state;
+function freshState(keepMeta){
+  const s={
+    v:SAVE_VERSION, stardust:0, totalRun:0, totalAll:0, peak:0,
+    dust:0, de:0, crunches:0,
+    up:{}, perks:{}, rules:{}, chal:{},
+    model:'inner', bodies:[], nextId:1, turrets:[],
+    playtime:0, lastSeen:Date.now(), sps:0,
+    settings:{quality:'high', mute:false, motion:true, field:false}
+  };
+  if(keepMeta && state){
+    s.dust=state.dust; s.de=state.de; s.crunches=state.crunches;
+    s.perks=Object.assign({},state.perks); s.rules=Object.assign({},state.rules);
+    s.chal=Object.assign({},state.chal); s.totalAll=state.totalAll;
+    s.peak=state.peak; s.playtime=state.playtime;
+    s.settings=Object.assign({},state.settings);
+    s.model = (MODELS[state.model] && unlockedModel(state.model,s)) ? state.model : 'inner';
+    const keep=0.20*(s.perks.inherit||0);
+    if(keep>0) for(const u of UPGRADES){
+      const lv=state.up[u.id]||0;
+      if(lv>0) s.up[u.id]=Math.floor(lv*keep);
+    }
+    if(s.perks.magnetkeep)
+      s.keepMagnets=(state.bodies||[]).filter(b=>b.k==='magnet').map(b=>({x:b.x,y:b.y}));
+  }
+  return s;
+}
+const up   = id => state.up[id]||0;
+const perk = id => state.perks[id]||0;
+const rule = id => !!state.rules[id];
+const chal = id => !!state.chal[id];
+function unlockedModel(k,s){ s=s||state; const m=MODELS[k]; return !m.perk || (s.perks[m.perk]||0)>0; }
+
+const gravG        = ()=> G_BASE*(1+0.07*up('grav'))*(rule('gravity2')?1.5:1);
+const windMult     = ()=> Math.max(0.45,(1+0.04*up('mass')-0.05*up('aero'))*(chal('gale')?2.5:1));
+const massMult     = ()=> 1+0.12*up('mass');
+const valueMult    = ()=> 1+0.18*up('value');
+const spawnRate    = ()=> (0.85+0.14*up('spawn'))*(chal('sparse')?0.5:1);
+const maxMeteors   = ()=> Math.min(MAX_METEOR_HARD, 40+8*up('cap'));
+// Resonant Coupling raises the VALUE of each loop rather than the loop COUNT. Occupancy
+// therefore stays roughly constant as you upgrade, so throughput can never collapse.
+const loopGain     = ()=> 1+0.18*up('retain');
+const decayMult    = ()=> rule('nodecay')?0.34:1;
+const slingEff     = ()=> 1+0.10*up('sling');
+const wormCap      = ()=> rule('infworm')?999:2+up('worm');
+const nebMult      = ()=> chal('vacuum')?0:(1+0.15*up('neb'));
+const trailBonus   = ()=> 1+0.01*up('trail');
+const trailLen     = ()=> Math.min(TRAIL_MAX,14+up('trail'));
+const tidalChance  = ()=> 0.08*up('tidal');
+const offlinePct   = ()=> 0.10*up('offline');
+const legacyMult   = ()=> 1+0.25*perk('power');
+const budgetTotal  = ()=> BASE_BUDGET+30*perk('budget');
+const baseAccrete  = ()=> perk('accrete') ? 2*perk('accrete')*Math.pow(1.6,state.crunches) : 0;
+const fieldStrength= ()=> perk('field')*260;
+const turretCount  = ()=> up('turret');
+const magnetCap    = ()=> up('magnet');
+const resonanceMul = ()=> rule('resonate')?6:3;
+const resonanceWin = ()=> rule('resonate')?5:RES_WINDOW;
+
+/* ==========================================================================
+   BOARD
+   ========================================================================== */
+let bodies=[], gravB=[], fieldB=[], solidB=[], holes=[], byId=new Map();
+
+function makeBody(rec){
+  const t=BT[rec.k]; if(!t) return null;
+  const b={
+    id:rec.id, k:rec.k, type:t.type, kind:t.kind||null,
+    x:rec.x, y:rec.y, r:t.r, mass:t.mass, value:t.value, color:t.color,
+    name:t.name, glyph:t.glyph, cost:t.cost, lvl:rec.lvl||1,
+    parent:rec.parent||null, pair:rec.pair||null,
+    solid:!!SOLID[t.type], grav:!!GRAVITY[t.type], assist:!!ASSISTS[t.type],
+    fr:0, eps2:0, phase:rnd(0,TAU), orbitR:0, orbitSpd:0, vx:0,
+    period:3.2, pulse:0, flash:0, squish:0, hits:0, earned:0
+  };
+  b.fr = b.type==='nebula' ? b.r : Math.max(140, b.r*6+110);
+  b.eps2 = Math.pow(Math.max(8,b.r*0.42),2);
+  if(b.type==='asteroid') b.vx=(Math.random()<0.5?-1:1)*rnd(22,46);
+  if(b.type==='pulsar'){ b.period=3.2; b.pulse=rnd(0,3.2); }
+  return b;
+}
+function rebuildIndex(){
+  bodies=[]; byId.clear();
+  for(const rec of state.bodies){ const b=makeBody(rec); if(b){ bodies.push(b); byId.set(b.id,b); } }
+  for(const b of bodies){
+    if(b.type==='moon'){
+      const p=byId.get(b.parent);
+      if(p){ b.orbitR=p.r+52; b.orbitSpd=0.62+0.25*Math.random(); }
+      else { b.type='asteroid'; b.solid=true; }
+    }
+  }
+  gravB=bodies.filter(b=>b.grav);
+  fieldB=bodies.filter(b=>b.type==='nebula'||b.type==='pulsar');
+  solidB=bodies.filter(b=>b.solid);
+  holes=bodies.filter(b=>b.type==='blackhole');
+  bakeSprites();
+}
+function boardUsed(){
+  let u=0;
+  for(const rec of state.bodies){ const t=BT[rec.k]; if(t && rec.k!=='magnet') u+=t.cost; }
+  return u;
+}
+function loadModel(key){
+  const m=MODELS[key]; if(!m) return;
+  state.model=key; state.bodies=[]; state.nextId=1;
+  const created=[];
+  for(const d of m.bodies){
+    const rec={id:state.nextId++, k:d[0], x:d[1], y:d[2], lvl:1};
+    if(d[3]==='p'){
+      let best=null,bd=1e9;
+      for(const c of created){
+        if(BT[c.k].type!=='planet') continue;
+        const dd=(c.x-rec.x)*(c.x-rec.x)+(c.y-rec.y)*(c.y-rec.y);
+        if(dd<bd){bd=dd;best=c;}
+      }
+      if(best) rec.parent=best.id;
+    }
+    state.bodies.push(rec); created.push(rec);
+  }
+  const bh=state.bodies.filter(r=>BT[r.k].type==='blackhole');
+  const wh=state.bodies.filter(r=>BT[r.k].type==='whitehole');
+  for(let i=0;i<bh.length;i++) if(wh[i]) bh[i].pair=wh[i].id;
+  if(state.keepMagnets){
+    for(const mg of state.keepMagnets) state.bodies.push({id:state.nextId++,k:'magnet',x:mg.x,y:mg.y,lvl:1});
+    state.keepMagnets=null;
+  }
+  syncTurrets(); rebuildIndex();
+}
+function syncTurrets(){
+  const n=turretCount(); state.turrets=state.turrets||[];
+  while(state.turrets.length<n){
+    const i=state.turrets.length, left=i%2===0;
+    state.turrets.push({x:left?40:W-40, y:300+Math.floor(i/2)*260, a:left?-24:204, p:1});
+  }
+  state.turrets.length=n;
+}
+function bodyUpCost(b){ return Math.ceil((14+b.cost*2.2)*Math.pow(1.34,b.lvl-1)*(1+state.crunches*0.15)); }
+
+/* ==========================================================================
+   POOLS
+   ========================================================================== */
+function newMeteor(){
+  return {x:0,y:0,vx:0,vy:0,r:3.4, slings:0, orbitM:1, worm:1, ion:0, loops:0, transits:0,
+    domId:0, lastA:0, accA:0, spIn:0, inOrbit:false, born:0, frac:0,
+    tx:new Float32Array(TRAIL_MAX), ty:new Float32Array(TRAIL_MAX), tn:0, th:0};
+}
+const mPool=[], meteors=[];
+function spawnMeteor(x,y,vx,vy,src){
+  if(meteors.length>=maxMeteors()) return null;
+  const m=mPool.pop()||newMeteor();
+  m.x=x; m.y=y; m.vx=vx; m.vy=vy;
+  m.slings=0; m.orbitM=1; m.worm=1; m.ion=0; m.loops=0; m.transits=0;
+  m.domId=0; m.accA=0; m.lastA=0; m.spIn=0; m.inOrbit=false;
+  m.born=time; m.frac=src?src.frac:0; m.tn=0; m.th=0;
+  meteors.push(m); return m;
+}
+function killMeteor(i){ mPool.push(meteors[i]); meteors[i]=meteors[meteors.length-1]; meteors.pop(); }
+
+const parts=[], pPool=[];
+function addPart(x,y,vx,vy,life,size,col){
+  let p;
+  if(parts.length>=MAX_PART) p=parts.shift(); else p=pPool.pop()||{};
+  p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.max=life;p.size=size;p.col=col;
+  parts.push(p);
+}
+const texts=[];
+function addText(x,y,s,col,scale){
+  if(texts.length>=MAX_TEXT) texts.shift();
+  texts.push({x:x,y:y,s:s,col:col,life:1.15,max:1.15,sc:scale||1,vy:-32});
+}
+const waves=[];
+function addWave(x,y,max,col,speed,width){
+  waves.push({x:x,y:y,r:0,max:max,col:col,sp:speed||420,w:width||3,push:!!speed});
+}
+
+/* ==========================================================================
+   SCORING
+   ========================================================================== */
+let time=0, chainMap=new Map(), chainMult=1, lastHit={id:0,parent:0,t:-99};
+let spsAcc=0, spsWin=0, rateAcc=0, rateT=0;
+// Payouts are heavy-tailed and, early on, sparse: at base spawn rate impacts are ~4s
+// apart, and one 20-loop wormhole chain can outweigh a thousand ordinary hits. A short
+// sampling window is therefore empty much of the time and reads a misleading 0/s.
+// 30 buckets of 0.5s = a 15-second moving average, which stays honest at both extremes.
+const RATE_N=30; const rateBuf=new Float64Array(RATE_N); let rateIdx=0;
+
+function updateChain(){
+  if(chainMap.size) for(const [k,t] of chainMap) if(time-t>CHAIN_WINDOW) chainMap.delete(k);
+  chainMult=1+0.08*Math.max(0,chainMap.size-1);
+}
+function addStardust(n){
+  state.stardust+=n; state.totalRun+=n; state.totalAll+=n; spsAcc+=n;
+  if(n>state.peak) state.peak=n;
+}
+function scoreHit(m,b){
+  chainMap.set(b.id,time);
+  const res=(b.type==='planet' && lastHit.parent===b.id && time-lastHit.t<resonanceWin())?resonanceMul():1;
+  const dust=b.value*b.lvl*valueMult()*(1+0.15*m.slings*slingEff())*m.orbitM*m.worm*(1+m.ion)
+           * res*chainMult*massMult()*trailBonus()*legacyMult();
+  addStardust(dust);
+  b.hits++; b.earned+=dust; b.flash=1; b.squish=1;
+  lastHit={id:b.id, parent:b.type==='moon'?b.parent:0, t:time};
+
+  const tier = dust>=1e6?4 : dust>=1e5?3 : dust>=1e4?2 : dust>=1e3?1 : 0;
+  addText(b.x,b.y-b.r-8,fmt(dust),['#ffffff','#8fe9ff','#5ce6ff','#c9a2ff','#ffd166'][tier],1+tier*0.32);
+  burst(m.x,m.y,b,tier);
+  audio.hit(m.slings+m.loops*2+m.transits*3,tier);
+  if(state.settings.motion) trauma=Math.min(1.05,trauma+0.035+tier*0.11);
+}
+function burst(x,y,b,tier){
+  const n=Math.round((10+tier*11)*quality());
+  for(let i=0;i<n;i++){
+    const a=rnd(0,TAU), sp=rnd(40,150+tier*95);
+    addPart(x,y,Math.cos(a)*sp,Math.sin(a)*sp,rnd(0.3,0.75+tier*0.2),rnd(1.4,3.4+tier*0.9),b.color);
+  }
+  addWave(x,y,40+tier*70,b.color,0,2+tier);
+  if(tier>=3) addWave(x,y,150+tier*90,'#ffffff',0,1.5);
+}
+
+/* ==========================================================================
+   PHYSICS
+   ========================================================================== */
+let spawnAcc=0, turretAcc=0, trauma=0, shx=0, shy=0, timeScale=1, dilateT=0, dilateCd=0;
+let paused=false, crunching=0;
+let spCache=null, spCacheN=-1;
+
+function spawnX(){
+  if(spCacheN!==perk('core')){
+    const n=1+perk('core'); spCache=[];
+    if(n===1) spCache.push(W*0.5);
+    else for(let i=0;i<n;i++) spCache.push(W*(i+1)/(n+1));
+    spCacheN=perk('core');
+  }
+  return spCache[(Math.random()*spCache.length)|0];
+}
+function emit(){
+  const n=rule('twin')?2:1;
+  for(let i=0;i<n;i++) spawnMeteor(spawnX()+rnd(-16,16),-18,rnd(-14,14),rnd(40,58));
+}
+
+function step(dt){
+  time+=dt; state.playtime+=dt;
+  if(baseAccrete()>0) addStardust(baseAccrete()*dt*legacyMult()*valueMult());
+
+  spawnAcc+=spawnRate()*dt;
+  while(spawnAcc>=1){ spawnAcc-=1; emit(); }
+  if(state.turrets.length){
+    turretAcc+=spawnRate()*0.55*state.turrets.length*dt;
+    while(turretAcc>=1){
+      turretAcc-=1;
+      const t=state.turrets[(Math.random()*state.turrets.length)|0];
+      const a=t.a*Math.PI/180, sp=200*t.p;
+      spawnMeteor(t.x,t.y,Math.cos(a)*sp,Math.sin(a)*sp);
+      addPart(t.x,t.y,Math.cos(a)*60,Math.sin(a)*60,0.3,2.4,'#7cffcb');
+    }
+  }
+
+  for(let i=0;i<bodies.length;i++){
+    const b=bodies[i];
+    if(b.flash>0) b.flash=Math.max(0,b.flash-dt*4.5);
+    if(b.squish>0) b.squish=Math.max(0,b.squish-dt*9);
+    if(b.type==='moon'){
+      const p=byId.get(b.parent);
+      if(p){ b.phase+=b.orbitSpd*dt; b.x=p.x+Math.cos(b.phase)*b.orbitR; b.y=p.y+Math.sin(b.phase)*b.orbitR*0.62; }
+    } else if(b.type==='asteroid'){
+      b.x+=b.vx*dt; if(b.x<-20)b.x=W+20; else if(b.x>W+20)b.x=-20;
+    } else if(b.type==='pulsar'){
+      b.pulse+=dt;
+      if(b.pulse>=b.period){ b.pulse-=b.period; addWave(b.x,b.y,430,'#7cffcb',430,2.5); b.flash=1; }
+    }
+  }
+  for(let i=waves.length-1;i>=0;i--){
+    const w=waves[i];
+    w.r += (w.push? w.sp : w.max*3.4)*dt;
+    if(w.r>=w.max) waves.splice(i,1);
+  }
+
+  const G=gravG(), wind=WIND*windMult(), nm=nebMult(), noCap=rule('gravity2');
+  const cx=W*0.5, cy=H*0.5, fs=fieldStrength(), tid=tidalChance();
+
+  for(let i=meteors.length-1;i>=0;i--){
+    const m=meteors[i];
+    const age=time-m.born;
+    let ax=0, ay=wind, bestF=0, best=null;
+
+    // Occupancy failsafe. Emergent termination is not trustworthy enough to bet the
+    // economy on: if the board fills with meteorites that never resolve, income stops
+    // dead. First the wind ramps, then we force a resolution outright.
+    if(age>ORBIT_TTL){
+      ay += WIND*Math.min(8,(age-ORBIT_TTL)*0.5);
+      if(age>ORBIT_TTL*1.5){
+        let nb=null,nd=1e9;
+        for(let j=0;j<solidB.length;j++){
+          const b=solidB[j], dd=Math.hypot(b.x-m.x,b.y-m.y);
+          if(dd<nd){ nd=dd; nb=b; }
+        }
+        if(nb&&nd<520) scoreHit(m,nb);   // it earned the multiplier; cash it out
+        killMeteor(i); continue;
+      }
+    }
+
+    if(fs>0){
+      const dx=cx-m.x, dy=cy-m.y, d2=dx*dx+dy*dy+40000;
+      const f=fs*40/d2, inv=f/Math.sqrt(d2);
+      ax+=dx*inv; ay+=dy*inv;
+    }
+
+    for(let j=0;j<gravB.length;j++){
+      const b=gravB[j];
+      const dx=b.x-m.x, dy=b.y-m.y, d2raw=dx*dx+dy*dy, d2=d2raw+b.eps2;
+      const f=G*b.mass/d2;
+      if(f>bestF && b.assist){ bestF=f; best=b; }
+      const inv=f/Math.sqrt(d2);
+      ax+=dx*inv; ay+=dy*inv;
+      if(b.solid && m.frac<2 && tid>0 && d2raw>(b.r+m.r)*(b.r+m.r)
+         && d2raw<(b.r*2.3)*(b.r*2.3) && Math.random()<tid*dt*6) fracture(m,b);
+    }
+
+    if(nm>0) for(let j=0;j<fieldB.length;j++){
+      const b=fieldB[j];
+      if(b.type!=='nebula') continue;
+      const dx=m.x-b.x, dy=m.y-b.y, d2=dx*dx+dy*dy;
+      if(d2>b.r*b.r) continue;
+      const fall=1-Math.sqrt(d2)/b.r;
+      if(b.kind==='drag'){
+        const k=1-Math.min(0.6,1.35*nm*fall*dt);
+        m.vx*=k; m.vy*=k;
+      } else {
+        m.ion += 0.55*nm*fall*dt;
+        const d=Math.sqrt(d2)||1, push=26*nm*fall;
+        ax+=dx/d*push; ay+=dy/d*push;
+      }
+    }
+    for(let j=0;j<waves.length;j++){
+      const w=waves[j]; if(!w.push) continue;
+      const dx=m.x-w.x, dy=m.y-w.y, d=Math.sqrt(dx*dx+dy*dy)||1;
+      if(Math.abs(d-w.r)<15){ const k=170/d; m.vx+=dx*k; m.vy+=dy*k; }
+    }
+
+    if(!noCap){
+      const am=Math.sqrt(ax*ax+ay*ay);
+      if(am>A_CAP){ const k=A_CAP/am; ax*=k; ay*=k; }
+    }
+    m.vx+=ax*dt; m.vy+=ay*dt;
+    const md=1-MEDIUM*dt; m.vx*=md; m.vy*=md;
+
+    // ---- orbit assist, inward sink, loop + slingshot accounting
+    if(best){
+      const dx=m.x-best.x, dy=m.y-best.y, r=Math.sqrt(dx*dx+dy*dy);
+      // NOTE the inner bound: the sink runs right down through the collision radius.
+      // Cutting off above it leaves a force-free shell where circular orbits are stable
+      // forever, which silently deadlocks the board. Do not raise this.
+      if(r>best.r*0.9 && r<best.fr){
+        const vc=Math.sqrt(G*Math.abs(best.mass)/r), sp=Math.sqrt(m.vx*m.vx+m.vy*m.vy);
+        if(sp>0.5*vc && sp<2.0*vc){
+          const ux=dx/r, uy=dy/r, tx=-uy, ty=ux;
+          const vr=m.vx*ux+m.vy*uy;
+          const want=-SINK*vc*decayMult();
+          const dvr=(want-vr)*Math.min(0.9,ASSIST*dt*6);
+          m.vx+=dvr*ux; m.vy+=dvr*uy;
+          let vt=m.vx*tx+m.vy*ty;
+          const target=vc*(vt>=0?1:-1);
+          const nvt=vt+(target-vt)*Math.min(0.9,ASSIST*0.55*dt);
+          m.vx+=(nvt-vt)*tx; m.vy+=(nvt-vt)*ty;
+          m.inOrbit=true;
+        } else m.inOrbit=false;
+      } else m.inOrbit=false;
+
+      const a=Math.atan2(dy,dx);
+      if(m.domId!==best.id){
+        if(m.domId){
+          const sp=Math.sqrt(m.vx*m.vx+m.vy*m.vy);
+          if(m.spIn>0 && sp>m.spIn*SLING_RATIO){
+            m.slings++;
+            addText(m.x,m.y,'\u27a6'+m.slings,'#7cffcb',0.85);
+            addPart(m.x,m.y,0,0,0.4,4,'#7cffcb');
+            audio.blip(520+m.slings*45);
+          }
+        }
+        m.domId=best.id; m.spIn=Math.sqrt(m.vx*m.vx+m.vy*m.vy); m.accA=0; m.lastA=a;
+      } else {
+        m.accA+=normA(a-m.lastA); m.lastA=a;
+        if(Math.abs(m.accA)>=TAU){
+          m.accA-=Math.sign(m.accA)*TAU;
+          m.loops++; m.orbitM+=loopGain();
+          addText(m.x,m.y,'\u21bb x'+fmt(m.orbitM),'#c9a2ff',1.0);
+          addWave(m.x,m.y,52,'#c9a2ff',0,1.5);
+          audio.blip(320+m.loops*38);
+        }
+      }
+    } else if(m.domId){
+      const sp=Math.sqrt(m.vx*m.vx+m.vy*m.vy);
+      if(m.spIn>0 && sp>m.spIn*SLING_RATIO){ m.slings++; audio.blip(520+m.slings*45); }
+      m.domId=0; m.inOrbit=false;
+    }
+
+    const sp2=m.vx*m.vx+m.vy*m.vy;
+    if(sp2>V_CAP*V_CAP){ const k=V_CAP/Math.sqrt(sp2); m.vx*=k; m.vy*=k; }
+    const px=m.x, py=m.y;
+    m.x+=m.vx*dt; m.y+=m.vy*dt;
+
+    // Swept collision against the path travelled this substep, not just the endpoint.
+    let hit=null, transit=null;
+    for(let j=0;j<solidB.length;j++){
+      const b=solidB[j];
+      if(segHit(px,py,m.x,m.y,b.x,b.y,b.r+m.r)){ hit=b; break; }
+    }
+    if(!hit) for(let j=0;j<holes.length;j++){
+      const b=holes[j];
+      if(segHit(px,py,m.x,m.y,b.x,b.y,b.r)){ transit=b; break; }
+    }
+
+    if(transit){
+      const pair=byId.get(transit.pair);
+      if(pair){
+        if(m.transits<wormCap() && !chal('sealed')) m.worm*=2;
+        m.transits++;
+        const a=rnd(0,TAU), rr=pair.r*1.9;
+        burstRing(transit,'#a77bff'); burstRing(pair,'#ffffff');
+        m.x=pair.x+Math.cos(a)*rr; m.y=pair.y+Math.sin(a)*rr;
+        const sp=Math.sqrt(m.vx*m.vx+m.vy*m.vy)*1.05;
+        m.vx=Math.cos(a)*sp; m.vy=Math.sin(a)*sp;
+        m.domId=0; m.tn=0; m.th=0;
+        addText(pair.x,pair.y-pair.r-10,'\u25cc x'+fmt(m.worm),'#ff6ad5',1.2);
+        audio.worm();
+        if(state.settings.motion) trauma=Math.min(1.0,trauma+0.14);
+        continue;
+      }
+    }
+    if(hit){ scoreHit(m,hit); killMeteor(i); continue; }
+    if(m.y>H+60 || m.x<-260 || m.x>W+260 || m.y<-800){ killMeteor(i); continue; }
+  }
+
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i]; p.life-=dt;
+    if(p.life<=0){ pPool.push(p); parts[i]=parts[parts.length-1]; parts.pop(); continue; }
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.965; p.vy=p.vy*0.965+70*dt;
+  }
+  for(let i=texts.length-1;i>=0;i--){
+    const t=texts[i]; t.life-=dt; t.y+=t.vy*dt; t.vy*=0.94;
+    if(t.life<=0) texts.splice(i,1);
+  }
+
+  updateChain();
+  if(trauma>0) trauma=Math.max(0,trauma-dt*1.9);
+  if(dilateT>0){ dilateT-=dt; if(dilateT<=0) timeScale=1; }
+  if(dilateCd>0) dilateCd-=dt;
+}
+function burstRing(b,col){
+  const n=Math.round(16*quality());
+  for(let i=0;i<n;i++){
+    const a=rnd(0,TAU), sp=rnd(60,240);
+    addPart(b.x,b.y,Math.cos(a)*sp,Math.sin(a)*sp,rnd(0.3,0.7),2.6,col);
+  }
+  addWave(b.x,b.y,110,col,0,2);
+}
+function fracture(m,b){
+  if(meteors.length+2>maxMeteors()) return;
+  m.frac++;
+  for(let i=0;i<2;i++){
+    const f=spawnMeteor(m.x,m.y,m.vx+rnd(-70,70),m.vy+rnd(-70,70),m);
+    if(!f) break;
+    f.slings=m.slings; f.orbitM=m.orbitM; f.worm=m.worm; f.ion=m.ion;
+    f.loops=m.loops; f.transits=m.transits; f.frac=m.frac;
+  }
+  addText(m.x,m.y,'\u2742 SPLIT','#ffd166',1.0);
+  addPart(m.x,m.y,0,0,0.4,5,'#ffd166');
+  audio.blip(880);
+}
+
+/* ==========================================================================
+   RENDER
+   ========================================================================== */
+const cv=$('game'), ctx=cv.getContext('2d');
+const bgc=document.createElement('canvas'), bgx=bgc.getContext('2d');
+const blc=document.createElement('canvas'), blx=blc.getContext('2d');
+let bw=0,bh=0,sc=1,dpr=1,canBlur=false;
+const sprites=new Map(); let dot=null;
+
+function quality(){ const q=state&&state.settings?state.settings.quality:'high'; return q==='high'?1:q==='med'?0.6:0.3; }
+function hexA(h,a){ const n=parseInt(h.slice(1),16); return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')'; }
+function lighten(h,k){
+  const n=parseInt(h.slice(1),16);
+  return 'rgb('+Math.min(255,(n>>16&255)+255*k|0)+','+Math.min(255,(n>>8&255)+255*k|0)+','+Math.min(255,(n&255)+255*k|0)+')';
+}
+function darken(h,k){
+  const n=parseInt(h.slice(1),16);
+  return 'rgb('+((n>>16&255)*k|0)+','+((n>>8&255)*k|0)+','+((n&255)*k|0)+')';
+}
+function makeDot(){
+  const c=document.createElement('canvas'); c.width=c.height=32;
+  const g=c.getContext('2d'), rg=g.createRadialGradient(16,16,0,16,16,16);
+  rg.addColorStop(0,'rgba(255,255,255,1)'); rg.addColorStop(0.35,'rgba(255,255,255,.55)');
+  rg.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=rg; g.fillRect(0,0,32,32); dot=c;
+}
+function bakeSprites(){
+  sprites.clear();
+  for(const b of bodies){
+    const key=b.k+'|'+b.r;
+    if(sprites.has(key)) continue;
+    if(b.type==='nebula'){ sprites.set(key,null); continue; }
+    const R=Math.ceil(b.r*3.2), S=R*2;
+    const c=document.createElement('canvas'); c.width=c.height=S;
+    const g=c.getContext('2d');
+    let rg=g.createRadialGradient(R,R,b.r*0.5,R,R,R);
+    rg.addColorStop(0,hexA(b.color,0.55)); rg.addColorStop(0.35,hexA(b.color,0.18)); rg.addColorStop(1,hexA(b.color,0));
+    g.fillStyle=rg; g.fillRect(0,0,S,S);
+    if(b.type==='blackhole'){
+      g.fillStyle='#000'; g.beginPath(); g.arc(R,R,b.r,0,TAU); g.fill();
+      g.strokeStyle=hexA(b.color,0.95); g.lineWidth=2.4; g.beginPath(); g.arc(R,R,b.r+3,0,TAU); g.stroke();
+      g.strokeStyle='rgba(255,255,255,.5)'; g.lineWidth=1; g.beginPath(); g.arc(R,R,b.r+8,0,TAU); g.stroke();
+    } else if(b.type==='whitehole'){
+      rg=g.createRadialGradient(R,R,0,R,R,b.r);
+      rg.addColorStop(0,'#fff'); rg.addColorStop(0.6,'rgba(220,235,255,.85)'); rg.addColorStop(1,'rgba(180,210,255,.15)');
+      g.fillStyle=rg; g.beginPath(); g.arc(R,R,b.r,0,TAU); g.fill();
+    } else {
+      rg=g.createRadialGradient(R-b.r*0.34,R-b.r*0.4,b.r*0.1,R,R,b.r);
+      rg.addColorStop(0,lighten(b.color,0.55)); rg.addColorStop(0.55,b.color); rg.addColorStop(1,darken(b.color,0.62));
+      g.fillStyle=rg; g.beginPath(); g.arc(R,R,b.r,0,TAU); g.fill();
+      g.strokeStyle=hexA('#ffffff',0.5); g.lineWidth=1.4;
+      g.beginPath(); g.arc(R,R,b.r-0.7,0,TAU); g.stroke();
+      if(b.type==='planet'){
+        g.save(); g.beginPath(); g.arc(R,R,b.r,0,TAU); g.clip();
+        g.globalAlpha=0.16; g.fillStyle=darken(b.color,0.4);
+        for(let i=0;i<4;i++) g.fillRect(R-b.r, R-b.r+(i+0.5)*b.r*0.5, b.r*2, b.r*0.16);
+        g.restore();
+      }
+    }
+    sprites.set(key,{c:c,R:R});
+  }
+}
+function resize(){
+  const rect=cv.getBoundingClientRect();
+  if(rect.width<10) return;
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  bw=Math.round(rect.width*dpr); bh=Math.round(rect.height*dpr);
+  cv.width=bw; cv.height=bh; sc=bw/W;
+  bgc.width=bw+80; bgc.height=bh+80;
+  const bq=quality()>=0.9?0.34:quality()>=0.5?0.26:0.2;
+  blc.width=Math.max(32,Math.round(bw*bq)); blc.height=Math.max(32,Math.round(bh*bq));
+  canBlur=(typeof blx.filter==='string');
+  paintBackground();
+}
+function paintBackground(){
+  const g=bgx, ww=bgc.width, hh=bgc.height;
+  g.setTransform(1,0,0,1,0,0);
+  g.fillStyle='#04050e'; g.fillRect(0,0,ww,hh);
+  g.globalCompositeOperation='lighter';
+  const cols=['rgba(60,90,220,.16)','rgba(150,60,200,.14)','rgba(40,160,190,.12)','rgba(200,60,140,.10)'];
+  for(let i=0;i<7;i++){
+    const x=Math.random()*ww, y=Math.random()*hh, r=Math.min(ww,hh)*rnd(0.18,0.5);
+    const rg=g.createRadialGradient(x,y,0,x,y,r);
+    rg.addColorStop(0,cols[i%cols.length]); rg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=rg; g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+  }
+  const n=Math.round(ww*hh/2600);
+  for(let i=0;i<n;i++){
+    const x=Math.random()*ww, y=Math.random()*hh, layer=Math.random();
+    const s=(layer<0.7?rnd(0.4,0.9):layer<0.95?rnd(0.9,1.5):rnd(1.5,2.4))*dpr;
+    const a=layer<0.7?rnd(0.18,0.5):rnd(0.5,0.95);
+    g.fillStyle= layer>0.95?'rgba(190,220,255,'+a+')':'rgba(255,255,255,'+a+')';
+    g.beginPath(); g.arc(x,y,s,0,TAU); g.fill();
+  }
+  g.globalCompositeOperation='source-over';
+}
+
+function render(){
+  const q=quality();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+  const swx=-40+Math.sin(time*0.055)*18, swy=-40+Math.cos(time*0.041)*14;
+  ctx.drawImage(bgc,swx,swy);
+
+  if(state.settings.motion && trauma>0){
+    const t=trauma*trauma;
+    shx=(Math.random()*2-1)*t*17; shy=(Math.random()*2-1)*t*17;
+  } else shx=shy=0;
+  ctx.setTransform(sc,0,0,sc,shx*sc,shy*sc);
+  ctx.globalCompositeOperation='lighter';
+
+  if(q>=0.6) for(const b of holes) drawLens(b,swx,swy);
+
+  for(const b of fieldB){
+    if(b.type!=='nebula') continue;
+    const inert=nebMult()<=0;
+    const pulse=0.5+0.5*Math.sin(time*(b.kind==='ion'?1.5:0.6)+b.phase);
+    const a=(b.kind==='ion'?0.20:0.15)*(inert?0.25:1)*(0.72+0.28*pulse);
+    const rg=ctx.createRadialGradient(b.x,b.y,b.r*0.15,b.x,b.y,b.r);
+    rg.addColorStop(0,hexA(b.color,a)); rg.addColorStop(0.55,hexA(b.color,a*0.45)); rg.addColorStop(1,hexA(b.color,0));
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,TAU); ctx.fill();
+    ctx.strokeStyle=hexA(b.color,0.22*(inert?0.3:1)); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r*(0.97+0.02*pulse),0,TAU); ctx.stroke();
+  }
+
+  if(state.settings.field) drawField();
+
+  if(q>=0.6){
+    ctx.lineWidth=0.7;
+    for(const b of bodies){
+      if(!b.assist) continue;
+      ctx.strokeStyle=hexA(b.color,0.07);
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.fr,0,TAU); ctx.stroke();
+    }
+  }
+  for(const w of waves){
+    const k=1-w.r/w.max;
+    ctx.strokeStyle=hexA(w.col,0.55*k*k); ctx.lineWidth=w.w*(0.4+k);
+    ctx.beginPath(); ctx.arc(w.x,w.y,w.r,0,TAU); ctx.stroke();
+  }
+
+  // trails: two-pass polyline (soft tail + bright head) keeps it to 2 strokes per meteor
+  if(q>=0.5){
+    const L=trailLen();
+    for(let i=0;i<meteors.length;i++){
+      const m=meteors[i];
+      m.tx[m.th]=m.x; m.ty[m.th]=m.y; m.th=(m.th+1)%L; if(m.tn<L)m.tn++;
+      if(m.tn<3) continue;
+      const mult=m.orbitM*m.worm*(1+0.15*m.slings*slingEff())*(1+m.ion);
+      const col = mult>=64?'#ffd166' : mult>=16?'#ff6ad5' : mult>=6?'#c9a2ff' : mult>=2?'#5ce6ff' : '#cfe3ff';
+      ctx.strokeStyle=hexA(col,0.13); ctx.lineWidth=2.6; ctx.beginPath();
+      for(let k=0;k<m.tn;k++){
+        const idx=(m.th-m.tn+k+L*2)%L;
+        if(k===0) ctx.moveTo(m.tx[idx],m.ty[idx]); else ctx.lineTo(m.tx[idx],m.ty[idx]);
+      }
+      ctx.stroke();
+      const hn=Math.min(m.tn,9);
+      ctx.strokeStyle=hexA(col,0.55); ctx.lineWidth=1.3; ctx.beginPath();
+      for(let k=0;k<hn;k++){
+        const idx=(m.th-hn+k+L*2)%L;
+        if(k===0) ctx.moveTo(m.tx[idx],m.ty[idx]); else ctx.lineTo(m.tx[idx],m.ty[idx]);
+      }
+      ctx.stroke();
+    }
+  }
+
+  for(const b of bodies){
+    if(b.type==='nebula') continue;
+    if(b.type==='blackhole'){
+      ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(time*0.9); ctx.scale(1,0.34);
+      ctx.strokeStyle=hexA('#a77bff',0.5); ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(0,0,b.r*2.05,0,TAU); ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(0,0,b.r*2.7,0,TAU); ctx.stroke();
+      ctx.restore();
+    }
+    const sp=sprites.get(b.k+'|'+b.r);
+    if(sp){
+      const R=sp.R*(1+b.squish*0.16);
+      ctx.globalAlpha=1;
+      ctx.drawImage(sp.c,b.x-R,b.y-R,R*2,R*2);
+      if(b.flash>0){
+        ctx.globalAlpha=b.flash*0.85;
+        ctx.drawImage(sp.c,b.x-R*1.12,b.y-R*1.12,R*2.24,R*2.24);
+        ctx.globalAlpha=1;
+      }
+    }
+    if(b.type==='moon' && q>=0.6){
+      const p=byId.get(b.parent);
+      if(p){
+        ctx.strokeStyle=hexA('#8fbaff',0.10); ctx.lineWidth=0.7;
+        ctx.save(); ctx.translate(p.x,p.y); ctx.scale(1,0.62);
+        ctx.beginPath(); ctx.arc(0,0,b.orbitR,0,TAU); ctx.stroke(); ctx.restore();
+      }
+    }
+    if(b.lvl>1 && q>=0.5){
+      ctx.globalAlpha=0.75; ctx.fillStyle='#ffffff';
+      ctx.font='600 '+Math.max(9,b.r*0.34)+'px system-ui,sans-serif';
+      ctx.textAlign='center'; ctx.fillText('L'+b.lvl,b.x,b.y+b.r+13); ctx.globalAlpha=1;
+    }
+    if(editMode){
+      ctx.strokeStyle= selId===b.id?'rgba(124,255,203,.9)':'rgba(255,255,255,.22)';
+      ctx.lineWidth= selId===b.id?2:1;
+      ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(b.x,b.y,b.r+7,0,TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  for(const t of state.turrets){
+    const a=t.a*Math.PI/180;
+    ctx.strokeStyle='rgba(124,255,203,.55)'; ctx.lineWidth=2.4;
+    ctx.beginPath(); ctx.moveTo(t.x,t.y); ctx.lineTo(t.x+Math.cos(a)*30,t.y+Math.sin(a)*30); ctx.stroke();
+    ctx.fillStyle='rgba(124,255,203,.75)'; ctx.beginPath(); ctx.arc(t.x,t.y,6,0,TAU); ctx.fill();
+    ctx.strokeStyle='rgba(124,255,203,.14)'; ctx.lineWidth=1; ctx.setLineDash([3,6]);
+    ctx.beginPath(); ctx.moveTo(t.x,t.y); ctx.lineTo(t.x+Math.cos(a)*180,t.y+Math.sin(a)*180); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  for(let i=0;i<meteors.length;i++){
+    const m=meteors[i];
+    const mult=m.orbitM*m.worm*(1+0.15*m.slings*slingEff())*(1+m.ion);
+    const col = mult>=64?'#ffd166' : mult>=16?'#ff6ad5' : mult>=6?'#c9a2ff' : mult>=2?'#5ce6ff' : '#ffffff';
+    const R=(m.r+(m.inOrbit?1.1:0))*(1+Math.min(1.6,Math.log10(Math.max(1,mult))*0.5));
+    ctx.globalAlpha=0.9; ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(m.x,m.y,R,0,TAU); ctx.fill();
+    if(dot){ ctx.globalAlpha=0.55; ctx.drawImage(dot,m.x-R*4,m.y-R*4,R*8,R*8); }
+  }
+  ctx.globalAlpha=1;
+
+  if(dot) for(let i=0;i<parts.length;i++){
+    const p=parts[i], k=p.life/p.max, s=p.size*(0.5+k*1.4);
+    ctx.globalAlpha=k*0.85; ctx.fillStyle=p.col;
+    ctx.drawImage(dot,p.x-s*2,p.y-s*2,s*4,s*4);
+  }
+  ctx.globalAlpha=1;
+
+  if(drag.on && !editMode){
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1.4; ctx.setLineDash([6,5]);
+    ctx.beginPath(); ctx.moveTo(drag.x,drag.y); ctx.lineTo(drag.cx,drag.cy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(drag.x,drag.y,4,0,TAU); ctx.fill();
+  }
+
+  if(q>=0.5){
+    blx.setTransform(1,0,0,1,0,0);
+    blx.globalCompositeOperation='source-over';
+    blx.clearRect(0,0,blc.width,blc.height);
+    if(canBlur) blx.filter='blur('+(q>=0.9?3:2)+'px)';
+    blx.drawImage(cv,0,0,bw,bh,0,0,blc.width,blc.height);
+    if(canBlur) blx.filter='none';
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=q>=0.9?0.55:0.42;
+    ctx.drawImage(blc,0,0,blc.width,blc.height,0,0,bw,bh);
+    ctx.globalAlpha=1;
+  }
+
+  ctx.setTransform(sc,0,0,sc,shx*sc,shy*sc);
+  ctx.globalCompositeOperation='source-over';
+  ctx.textAlign='center';
+  for(const t of texts){
+    const k=t.life/t.max;
+    const pop = k>0.82 ? 1+(1-(k-0.82)/0.18)*0.34 : 1;
+    ctx.globalAlpha=Math.min(1,k*1.9);
+    ctx.font='700 '+(11*t.sc*pop).toFixed(1)+'px system-ui,-apple-system,sans-serif';
+    ctx.shadowColor=t.col; ctx.shadowBlur=10*t.sc;
+    ctx.fillStyle=t.col; ctx.fillText(t.s,t.x,t.y);
+  }
+  ctx.shadowBlur=0; ctx.globalAlpha=1;
+  ctx.setTransform(1,0,0,1,0,0);
+}
+function drawLens(b,swx,swy){
+  const N=7, inner=b.r*1.02, outer=b.r*5.2;
+  for(let i=N;i>=1;i--){
+    const r0=inner+(outer-inner)*(i-1)/N, r1=inner+(outer-inner)*i/N;
+    const warp=1+0.85*Math.pow(1-(i-1)/N,2);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(b.x,b.y,r1,0,TAU); ctx.arc(b.x,b.y,r0,0,TAU,true); ctx.clip();
+    ctx.translate(b.x,b.y); ctx.rotate(0.30*Math.pow(1-(i-1)/N,2)+time*0.02); ctx.scale(warp,warp);
+    ctx.globalAlpha=0.85; ctx.globalCompositeOperation='source-over';
+    ctx.drawImage(bgc,(swx-b.x*sc)/sc,(swy-b.y*sc)/sc,bgc.width/sc,bgc.height/sc);
+    ctx.restore();
+  }
+  ctx.globalCompositeOperation='lighter';
+}
+function drawField(){
+  const G=gravG(), wind=WIND*windMult(), st=64;
+  ctx.strokeStyle='rgba(140,180,255,.20)'; ctx.lineWidth=0.8;
+  for(let x=st/2;x<W;x+=st) for(let y=st/2;y<H;y+=st){
+    let ax=0, ay=wind;
+    for(const b of gravB){
+      const dx=b.x-x, dy=b.y-y, d2=dx*dx+dy*dy+b.eps2, f=G*b.mass/d2, inv=f/Math.sqrt(d2);
+      ax+=dx*inv; ay+=dy*inv;
+    }
+    const am=Math.sqrt(ax*ax+ay*ay)||1, L=Math.min(26,5+Math.log10(1+am)*11);
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+ax/am*L,y+ay/am*L); ctx.stroke();
+  }
+}
+
+/* ==========================================================================
+   AUDIO — WebAudio oscillators only, no assets, no media elements
+   ========================================================================== */
+const audio=(function(){
+  let ac=null, master=null, verb=null, pad=null, voices=0, ok=true;
+  const SCALE=[0,2,4,7,9,12,14,16,19,21,24,26,28,31,33,36];
+  function init(){
+    if(ac||!ok) return;
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC){ ok=false; return; }
+      ac=new AC();
+      master=ac.createGain(); master.gain.value=0.5; master.connect(ac.destination);
+      verb=ac.createConvolver();
+      const len=Math.floor(ac.sampleRate*1.6), buf=ac.createBuffer(2,len,ac.sampleRate);
+      for(let ch=0;ch<2;ch++){
+        const d=buf.getChannelData(ch);
+        for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3.2);
+      }
+      verb.buffer=buf;
+      const wet=ac.createGain(); wet.gain.value=0.30; verb.connect(wet); wet.connect(master);
+      const dg=ac.createGain(); dg.gain.value=0.05;
+      pad=ac.createBiquadFilter(); pad.type='lowpass'; pad.frequency.value=340;
+      dg.connect(pad); pad.connect(master);
+      [55,82.5,110].forEach(function(f,i){
+        const o=ac.createOscillator(); o.type=i===2?'triangle':'sine'; o.frequency.value=f;
+        const g=ac.createGain(); g.gain.value=i===0?0.6:0.3;
+        o.connect(g); g.connect(dg); o.start();
+      });
+    }catch(e){ ok=false; }
+  }
+  function tone(freq,dur,type,vol){
+    if(!ac||state.settings.mute||voices>14) return;
+    try{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type=type||'sine'; o.frequency.value=freq;
+      g.gain.setValueAtTime(0,ac.currentTime);
+      g.gain.linearRampToValueAtTime(vol||0.14,ac.currentTime+0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+dur);
+      o.connect(g); g.connect(master); if(verb) g.connect(verb);
+      o.start(); o.stop(ac.currentTime+dur+0.02);
+      voices++; o.onended=function(){ voices--; };
+    }catch(e){}
+  }
+  return {
+    resume:function(){ init(); if(ac&&ac.state==='suspended'){ try{ac.resume();}catch(e){} } },
+    hit:function(combo,tier){
+      const deg=SCALE[Math.min(SCALE.length-1,combo)];
+      tone(196*Math.pow(2,deg/12),0.16+tier*0.1,tier>=3?'triangle':'sine',0.10+tier*0.035);
+      if(tier>=2) tone(98*Math.pow(2,deg/12),0.4,'sine',0.08);
+    },
+    blip:function(f){ tone(f,0.07,'sine',0.05); },
+    worm:function(){ tone(46,0.7,'sine',0.24); tone(69,0.5,'triangle',0.10); },
+    crunch:function(){ for(let i=0;i<26;i++) setTimeout(function(){ tone(1200-i*40,0.5,'sine',0.09); },i*130); },
+    setPad:function(mult){
+      if(pad&&ac){ try{ pad.frequency.setTargetAtTime(300+Math.min(2600,Math.log10(1+mult)*760),ac.currentTime,1.2); }catch(e){} }
+    }
+  };
+})();
+
+/* ==========================================================================
+   SAVE / LOAD
+   ========================================================================== */
+let storageOK=true, lastSaved=0, saveAcc=0;
+function tryStore(){
+  try{ localStorage.setItem('__cp_t','1'); localStorage.removeItem('__cp_t'); return true; }
+  catch(e){ return false; }
+}
+function serialize(){
+  state.lastSeen=Date.now(); state.sps=spsWin; syncTurrets();
+  return JSON.stringify({
+    v:SAVE_VERSION, stardust:state.stardust, totalRun:state.totalRun, totalAll:state.totalAll,
+    peak:state.peak, dust:state.dust, de:state.de, crunches:state.crunches,
+    up:state.up, perks:state.perks, rules:state.rules, chal:state.chal,
+    model:state.model, bodies:state.bodies, nextId:state.nextId, turrets:state.turrets,
+    playtime:state.playtime, lastSeen:state.lastSeen, sps:state.sps, settings:state.settings
+  });
+}
+function migrate(o){
+  if(!o||typeof o!=='object') throw new Error('not an object');
+  if(!o.v) o.v=1;
+  // future versions chain here:  if(o.v===1){ ...; o.v=2; }
+  if(o.v>SAVE_VERSION) throw new Error('save is from a newer version ('+o.v+')');
+  return o;
+}
+function applySave(o){
+  o=migrate(o);
+  const s=freshState(false);
+  const num=(a,b)=> typeof a==='number'&&isFinite(a)?a:b;
+  s.stardust=num(o.stardust,0); s.totalRun=num(o.totalRun,0); s.totalAll=num(o.totalAll,0);
+  s.peak=num(o.peak,0); s.dust=num(o.dust,0); s.de=num(o.de,0); s.crunches=num(o.crunches,0);
+  s.playtime=num(o.playtime,0); s.lastSeen=num(o.lastSeen,Date.now()); s.sps=num(o.sps,0);
+  for(const u of UPGRADES) if(o.up&&o.up[u.id]) s.up[u.id]=clamp(Math.floor(o.up[u.id]),0,u.max);
+  for(const p of PERKS) if(o.perks&&o.perks[p.id]) s.perks[p.id]=clamp(Math.floor(o.perks[p.id]),0,p.max);
+  for(const r of RULES) if(o.rules&&o.rules[r.id]) s.rules[r.id]=true;
+  for(const c of CHALLENGES) if(o.chal&&o.chal[c.id]) s.chal[c.id]=true;
+  if(o.settings){
+    if(['high','med','low'].indexOf(o.settings.quality)>=0) s.settings.quality=o.settings.quality;
+    s.settings.mute=!!o.settings.mute;
+    s.settings.motion=o.settings.motion!==false;
+    s.settings.field=!!o.settings.field;
+  }
+  s.model=(o.model&&MODELS[o.model])?o.model:'inner';
+  state=s;
+  if(!unlockedModel(s.model)) s.model='inner';
+  if(Array.isArray(o.bodies)&&o.bodies.length){
+    s.bodies=[]; let mx=1;
+    for(const rec of o.bodies){
+      if(!rec||!BT[rec.k]) continue;
+      const id=Math.max(1,Math.floor(num(rec.id,mx)));
+      s.bodies.push({id:id,k:rec.k,x:clamp(num(rec.x,W/2),-40,W+40),y:clamp(num(rec.y,H/2),-40,H+40),
+        lvl:Math.max(1,Math.floor(num(rec.lvl,1))),
+        parent:rec.parent?Math.floor(rec.parent):null,
+        pair:rec.pair?Math.floor(rec.pair):null});
+      mx=Math.max(mx,id+1);
+    }
+    s.nextId=Math.max(mx,Math.floor(num(o.nextId,mx)));
+    if(Array.isArray(o.turrets)) s.turrets=o.turrets.slice(0,6).map(t=>({
+      x:clamp(num(t.x,40),0,W), y:clamp(num(t.y,300),0,H), a:num(t.a,0), p:clamp(num(t.p,1),0.3,2)}));
+    syncTurrets(); rebuildIndex();
+  } else loadModel(s.model);
+
+  const away=(Date.now()-s.lastSeen)/1000;
+  if(away>60 && s.sps>0 && offlinePct()>0){
+    const gain=s.sps*Math.min(away,8*3600)*offlinePct();
+    if(gain>0){
+      s.stardust+=gain; s.totalRun+=gain; s.totalAll+=gain;
+      toast('Offline accretion: +'+fmt(gain)+' stardust over '+fmtTime(Math.min(away,8*3600)));
+    }
+  }
+}
+function save(){
+  if(!storageOK) return false;
+  try{ localStorage.setItem(SAVE_KEY,serialize()); lastSaved=Date.now(); return true; }
+  catch(e){ storageOK=false; return false; }
+}
+function load(){
+  if(!storageOK) return false;
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    applySave(JSON.parse(raw)); return true;
+  }catch(e){ return false; }
+}
+
+/* ==========================================================================
+   PRESTIGE
+   ========================================================================== */
+function dustGain(){
+  if(state.totalRun<PRESTIGE_MIN) return 0;
+  return Math.floor(DUST_K*Math.pow(state.totalRun/PRESTIGE_MIN,DUST_EXP)*(1+0.12*perk('dust')));
+}
+function deGain(){
+  if(!perk('bigbang')||state.totalRun<PRESTIGE_MIN*4) return 0;
+  let n=0; for(const c of CHALLENGES) if(chal(c.id)) n+=c.de;
+  return n;
+}
+function doCrunch(){
+  const d=dustGain(); if(d<=0||crunching) return;
+  const e=deGain();
+  crunching=1; audio.crunch();
+  const cx=W/2, cy=H/2, t0=performance.now();
+  const start=bodies.map(b=>({b:b,x:b.x,y:b.y}));
+  (function anim(){
+    const k=Math.min(1,(performance.now()-t0)/3600), e2=k*k*k;
+    for(const s of start){
+      const a=Math.atan2(s.y-cy,s.x-cx)+e2*7.5, r=Math.hypot(s.x-cx,s.y-cy)*(1-e2);
+      s.b.x=cx+Math.cos(a)*r; s.b.y=cy+Math.sin(a)*r;
+    }
+    if(k<1){
+      if(Math.random()<0.6){
+        const a=rnd(0,TAU), sp=rnd(100,600);
+        addPart(cx+Math.cos(a)*400*(1-e2),cy+Math.sin(a)*400*(1-e2),-Math.cos(a)*sp,-Math.sin(a)*sp,0.6,3,'#c9a2ff');
+      }
+      trauma=Math.min(1.05,0.15+e2*0.9);
+      requestAnimationFrame(anim);
+    } else {
+      addWave(cx,cy,900,'#ffffff',0,6); addWave(cx,cy,700,'#c9a2ff',0,4);
+      for(let i=0;i<160;i++){
+        const a=rnd(0,TAU), sp=rnd(200,900);
+        addPart(cx,cy,Math.cos(a)*sp,Math.sin(a)*sp,rnd(0.5,1.3),rnd(2,5),'#ffffff');
+      }
+      finishCrunch(d,e);
+    }
+  })();
+}
+function finishCrunch(d,e){
+  const prev=state.crunches;
+  const ns=freshState(true);
+  ns.dust=state.dust+d; ns.de=state.de+e; ns.crunches=prev+1;
+  state=ns;
+  meteors.length=0; texts.length=0; waves.length=0; chainMap.clear();
+  loadModel(state.model);
+  crunching=0; trauma=0.4;
+  toast('The universe collapsed. +'+fmt(d)+' Singularity Dust'+(e>0?' and +'+e+' Dark Energy':'')+'.');
+  buildAll(); save();
+}
+
+/* ==========================================================================
+   UI
+   ========================================================================== */
+const refs={};
+let toastT=null;
+function toast(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  if(toastT) clearTimeout(toastT);
+  toastT=setTimeout(function(){ t.classList.remove('show'); },4200);
+}
+function row(parent,glyph,name,desc,onClick){
+  const b=document.createElement('button'); b.className='row';
+  const ic=document.createElement('div'); ic.className='ic'; ic.textContent=glyph;
+  const bd=document.createElement('div'); bd.className='bd';
+  const nm=document.createElement('div'); nm.className='nm';
+  const nt=document.createElement('span'); nt.textContent=name;
+  const lv=document.createElement('span'); lv.className='lv';
+  nm.appendChild(nt); nm.appendChild(lv);
+  const ds=document.createElement('div'); ds.className='ds'; ds.textContent=desc;
+  bd.appendChild(nm); bd.appendChild(ds);
+  const cs=document.createElement('div'); cs.className='cs';
+  b.appendChild(ic); b.appendChild(bd); b.appendChild(cs);
+  if(onClick) b.addEventListener('click',onClick);
+  parent.appendChild(b);
+  return {el:b,lv:lv,cs:cs,ds:ds};
+}
+const upCost   = u => Math.ceil(u.base*Math.pow(u.gr,up(u.id)));
+const perkCost = p => p.max===1 ? p.cost : Math.ceil(p.cost*Math.pow(p.gr,perk(p.id)));
+
+function buildUpgrades(){
+  const box=$('upgList'); box.textContent=''; refs.upg=[];
+  for(const u of UPGRADES){
+    const r=row(box,u.g,u.name,u.ds,function(){
+      const c=upCost(u);
+      if(up(u.id)>=u.max||state.stardust<c) return;
+      state.stardust-=c; state.up[u.id]=up(u.id)+1;
+      if(u.id==='turret'){ syncTurrets(); buildBoard(); }
+      audio.blip(660); refreshUI();
+    });
+    refs.upg.push({u:u,r:r});
+  }
+}
+function buildBodies(){
+  const box=$('bodList'); box.textContent=''; refs.bod=[];
+  const list=bodies.filter(b=>b.value>0).slice().sort((a,b)=>b.value*b.lvl-a.value*a.lvl);
+  if(!list.length){ box.innerHTML='<div class="note">No scoring bodies on the board.</div>'; return; }
+  for(const b of list){
+    const r=row(box,b.glyph,b.name,'',function(){
+      const c=bodyUpCost(b);
+      if(state.stardust<c) return;
+      state.stardust-=c; b.lvl++;
+      const rec=state.bodies.find(x=>x.id===b.id); if(rec) rec.lvl=b.lvl;
+      b.flash=1; b.squish=1; audio.blip(740); refreshUI();
+    });
+    refs.bod.push({b:b,r:r});
+  }
+}
+function buildBoard(){
+  const sel=$('modelSel'); sel.textContent='';
+  for(const k in MODELS){
+    const o=document.createElement('option'); o.value=k;
+    o.textContent=MODELS[k].name+(unlockedModel(k)?'':' (locked)');
+    o.disabled=!unlockedModel(k); sel.appendChild(o);
+  }
+  sel.value=state.model;
+  const box=$('paletteList'); box.textContent=''; refs.pal=[];
+  const order=['terran','ice','gasGiant','moon','asteroid','neutron','pulsar','nebDrag','nebIon','blackhole','magnet'];
+  for(const k of order){
+    const t=BT[k];
+    const r=row(box,t.glyph,t.name, k==='magnet'?'Free — uses a magnet slot':('Energy cost '+t.cost), function(){
+      placeKind = placeKind===k?null:k; refreshUI();
+    });
+    refs.pal.push({k:k,r:r});
+  }
+  const tl=$('turList'); tl.textContent='';
+  for(let i=0;i<state.turrets.length;i++){
+    const t=state.turrets[i];
+    [['angle','a',-180,180,1],['power','p',0.3,2,0.05]].forEach(function(cfg){
+      const w=document.createElement('div'); w.className='fld';
+      const lb=document.createElement('label'); lb.textContent='Turret '+(i+1)+' '+cfg[0];
+      const rg=document.createElement('input');
+      rg.type='range'; rg.min=String(cfg[2]); rg.max=String(cfg[3]); rg.step=String(cfg[4]);
+      rg.value=String(t[cfg[1]]);
+      rg.addEventListener('input',function(){ t[cfg[1]]=parseFloat(rg.value); });
+      w.appendChild(lb); w.appendChild(rg); tl.appendChild(w);
+    });
+  }
+  if(!state.turrets.length) tl.innerHTML='<div class="note">Buy the Satellite Turrets upgrade to add aimable auto-launchers.</div>';
+}
+function buildCrunch(){
+  const box=$('perkList'); box.textContent=''; refs.perk=[];
+  for(const p of PERKS){
+    const r=row(box,p.g,p.name,p.ds,function(){
+      const c=perkCost(p);
+      if(perk(p.id)>=p.max||state.dust<c) return;
+      state.dust-=c; state.perks[p.id]=perk(p.id)+1;
+      if(p.id==='bigbang'||p.id.indexOf('m_')===0) buildBoard();
+      audio.blip(520); refreshUI(); save();
+    });
+    r.cs.classList.add('dust'); refs.perk.push({p:p,r:r});
+  }
+  const rb=$('ruleList'); rb.textContent=''; refs.rule=[];
+  for(const ru of RULES){
+    const r=row(rb,'\u2261',ru.name,ru.ds,function(){
+      if(rule(ru.id)||state.de<ru.cost) return;
+      state.de-=ru.cost; state.rules[ru.id]=true; audio.blip(300); refreshUI(); save();
+    });
+    r.cs.classList.add('de'); refs.rule.push({ru:ru,r:r});
+  }
+  const cb=$('chalList'); cb.textContent=''; refs.chal=[];
+  for(const c of CHALLENGES){
+    const r=row(cb,'\u26a0',c.name,c.ds,function(){
+      state.chal[c.id]=!chal(c.id); audio.blip(240); refreshUI();
+    });
+    refs.chal.push({c:c,r:r});
+  }
+}
+function buildAll(){ buildUpgrades(); buildBodies(); buildBoard(); buildCrunch(); refreshUI(); }
+
+function set(id,txt){ const el=$(id); if(el&&el.textContent!==txt) el.textContent=txt; }
+function refreshUI(){
+  set('sStardust',fmt(state.stardust));
+  set('sRate',fmt(spsWin)+'/s');
+  set('sDust',fmt(state.dust));
+  set('sDE',fmt(state.de));
+  set('sMeteors',meteors.length+'/'+maxMeteors());
+  set('sChain','x'+chainMult.toFixed(2));
+  set('cPeak',fmt(state.peak));
+  $('wrapDE').style.display=perk('bigbang')?'flex':'none';
+  $('deWrap').style.display=perk('bigbang')?'block':'none';
+  const db=$('btnDilate');
+  db.disabled=!perk('dilation')||dilateCd>0;
+  db.textContent=!perk('dilation')?'Time Dilation (locked)':dilateCd>0?'Dilation '+Math.ceil(dilateCd)+'s':dilateT>0?'Dilating\u2026':'Time Dilation';
+  db.classList.toggle('on',dilateT>0);
+
+  if(refs.upg) for(const it of refs.upg){
+    const lv=up(it.u.id), c=upCost(it.u), maxed=lv>=it.u.max;
+    it.r.lv.textContent=lv>0?('Lv '+lv+(maxed?' MAX':'')):'';
+    it.r.cs.textContent=maxed?'\u2014':fmt(c);
+    it.r.el.classList.toggle('no',!maxed&&state.stardust<c);
+    it.r.el.classList.toggle('max',maxed);
+  }
+  set('upgNote','Everything here is additive — nothing you buy ever makes the board worse. G='+
+    Math.round(gravG())+' \u00b7 wind \u00d7'+windMult().toFixed(2)+' \u00b7 spawn '+spawnRate().toFixed(2)+
+    '/s \u00b7 loop value +'+loopGain().toFixed(2));
+
+  if(refs.bod) for(const it of refs.bod){
+    const b=it.b, c=bodyUpCost(b);
+    it.r.lv.textContent='Lv '+b.lvl;
+    it.r.ds.textContent='Base '+fmt(b.value*b.lvl*valueMult())+' \u00b7 '+fmt(b.hits)+' hits \u00b7 earned '+fmt(b.earned);
+    it.r.cs.textContent=fmt(c);
+    it.r.el.classList.toggle('no',state.stardust<c);
+  }
+
+  const used=boardUsed(), tot=budgetTotal();
+  set('budNote','Using '+used+' of '+tot+' energy. The "Expanded Manifold" perk raises the ceiling.');
+  $('budBar').style.width=Math.min(100,used/tot*100)+'%';
+  set('modelNote',MODELS[state.model].desc);
+  if(refs.pal){
+    const magNow=state.bodies.filter(b=>b.k==='magnet').length;
+    for(const it of refs.pal){
+      const t=BT[it.k], isMag=it.k==='magnet';
+      const afford = isMag ? magNow<magnetCap() : used+t.cost<=tot;
+      it.r.cs.textContent= isMag ? (magNow+'/'+magnetCap()) : String(t.cost);
+      it.r.el.classList.toggle('no',!afford);
+      it.r.el.classList.toggle('sel',placeKind===it.k);
+    }
+  }
+  set('turNote',state.turrets.length?'Turrets fire continuously. Aim them into a nebula to set up capture orbits.':'');
+
+  const d=dustGain(), e=deGain();
+  set('crnNote', d>0
+    ? 'Collapsing now yields '+fmt(d)+' Singularity Dust'+(e>0?' and '+e+' Dark Energy':'')+
+      '. You keep perks, rules and '+(20*perk('inherit'))+'% of upgrade levels. Run total '+fmt(state.totalRun)+'.'
+    : 'Reach '+fmt(PRESTIGE_MIN)+' total stardust this run to collapse the universe. Currently '+
+      fmt(state.totalRun)+' ('+(state.totalRun/PRESTIGE_MIN*100).toFixed(1)+'%).');
+  $('crnBar').style.width=Math.min(100,state.totalRun/PRESTIGE_MIN*100)+'%';
+  $('btnCrunch').disabled = d<=0||crunching>0;
+  $('btnCrunch').textContent = d>0 ? 'Collapse \u2014 gain '+fmt(d)+' dust' : 'Collapse the Universe';
+
+  if(refs.perk) for(const it of refs.perk){
+    const lv=perk(it.p.id), c=perkCost(it.p), maxed=lv>=it.p.max;
+    it.r.lv.textContent = it.p.max===1 ? (lv?'OWNED':'') : (lv?('Lv '+lv+(maxed?' MAX':'')):'');
+    it.r.cs.textContent = maxed?'\u2014':fmt(c);
+    it.r.el.classList.toggle('no',!maxed&&state.dust<c);
+    it.r.el.classList.toggle('max',maxed);
+  }
+  if(refs.rule) for(const it of refs.rule){
+    const has=rule(it.ru.id);
+    it.r.lv.textContent=has?'ACTIVE':'';
+    it.r.cs.textContent=has?'\u2014':String(it.ru.cost);
+    it.r.el.classList.toggle('no',!has&&state.de<it.ru.cost);
+    it.r.el.classList.toggle('max',has);
+  }
+  if(refs.chal) for(const it of refs.chal){
+    const on=chal(it.c.id);
+    it.r.lv.textContent=on?'ON':'';
+    it.r.cs.textContent='+'+it.c.de+' DE';
+    it.r.el.classList.toggle('sel',on);
+  }
+
+  set('saveNote', storageOK
+    ? 'Auto-saves to this browser every 5 seconds. Last save '+(lastSaved?fmtTime((Date.now()-lastSaved)/1000)+' ago':'never')+'.'
+    : 'localStorage is unavailable here, so progress is in memory only — use Export to keep it.');
+  set('statNote','Playtime '+fmtTime(state.playtime)+' \u00b7 Crunches '+state.crunches+
+    ' \u00b7 Lifetime stardust '+fmt(state.totalAll)+' \u00b7 Best single impact '+fmt(state.peak)+
+    ' \u00b7 Particles '+parts.length);
+  $('btnMute').textContent=state.settings.mute?'Off':'On';
+  $('btnMute').classList.toggle('on',!state.settings.mute);
+  $('btnMotion').textContent=state.settings.motion?'On':'Off';
+  $('btnMotion').classList.toggle('on',state.settings.motion);
+  $('btnField').textContent=state.settings.field?'On':'Off';
+  $('btnField').classList.toggle('on',state.settings.field);
+  $('qSel').value=state.settings.quality;
+}
+
+/* ==========================================================================
+   INPUT
+   ========================================================================== */
+let editMode=false, placeKind=null, selId=0, dragBody=null;
+const drag={on:false,x:0,y:0,cx:0,cy:0};
+
+function toWorld(ev){
+  const r=cv.getBoundingClientRect();
+  return {x:(ev.clientX-r.left)/r.width*W, y:(ev.clientY-r.top)/r.height*H};
+}
+function pickBody(p){
+  let best=null,bd=1e9;
+  for(const b of bodies){
+    const d=Math.hypot(b.x-p.x,b.y-p.y);
+    const lim=Math.max(b.r+12, b.type==='nebula'?b.r:0);
+    if(d<lim&&d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+cv.addEventListener('pointerdown',function(ev){
+  audio.resume();
+  try{ cv.setPointerCapture(ev.pointerId); }catch(e){}
+  const p=toWorld(ev);
+  if(placeKind){ placeAt(placeKind,p); return; }
+  if(editMode){
+    const b=pickBody(p);
+    dragBody=b||null; selId=b?b.id:0; refreshUI(); return;
+  }
+  drag.on=true; drag.x=p.x; drag.y=p.y; drag.cx=p.x; drag.cy=p.y;
+});
+cv.addEventListener('pointermove',function(ev){
+  const p=toWorld(ev);
+  if(dragBody){
+    dragBody.x=clamp(p.x,0,W); dragBody.y=clamp(p.y,0,H);
+    const rec=state.bodies.find(x=>x.id===dragBody.id);
+    if(rec){ rec.x=dragBody.x; rec.y=dragBody.y; }
+    return;
+  }
+  if(drag.on){ drag.cx=p.x; drag.cy=p.y; }
+});
+function endDrag(){
+  if(dragBody){ dragBody=null; save(); return; }
+  if(!drag.on) return;
+  drag.on=false;
+  const dx=drag.x-drag.cx, dy=drag.y-drag.cy, d=Math.hypot(dx,dy);
+  const m=spawnMeteor(drag.x,drag.y,dx*2.3,dy*2.3+(d<8?60:0));
+  if(m){ addPart(drag.x,drag.y,0,0,0.35,4,'#ffffff'); audio.blip(440); }
+  $('hint').style.opacity='0';
+}
+cv.addEventListener('pointerup',endDrag);
+cv.addEventListener('pointercancel',endDrag);
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
+
+function placeAt(k,p){
+  const t=BT[k];
+  if(k==='magnet'){
+    if(state.bodies.filter(b=>b.k==='magnet').length>=magnetCap()){
+      toast('No free magnet slots — buy the Dark Matter Magnets upgrade.'); return;
+    }
+  } else if(boardUsed()+t.cost>budgetTotal()){
+    toast('Not enough board energy. Prestige into "Expanded Manifold".'); return;
+  }
+  const rec={id:state.nextId++,k:k,x:clamp(p.x,0,W),y:clamp(p.y,0,H),lvl:1};
+  if(t.type==='moon'){
+    let best=null,bd=1e9;
+    for(const b of bodies){
+      if(b.type!=='planet') continue;
+      const d=Math.hypot(b.x-p.x,b.y-p.y);
+      if(d<bd){ bd=d; best=b; }
+    }
+    if(!best){ toast('A moon needs a planet to orbit.'); state.nextId--; return; }
+    rec.parent=best.id;
+  }
+  if(t.type==='blackhole'){
+    const freeWh=state.bodies.find(r=>BT[r.k].type==='whitehole'&&!state.bodies.some(o=>o.pair===r.id));
+    if(freeWh) rec.pair=freeWh.id;
+    else{
+      const wh={id:state.nextId++,k:'whitehole',x:W-clamp(p.x,0,W),y:clamp(H-p.y,40,H-40),lvl:1};
+      state.bodies.push(wh); rec.pair=wh.id;
+    }
+  }
+  state.bodies.push(rec);
+  rebuildIndex(); buildBodies(); placeKind=null; refreshUI(); audio.blip(600); save();
+}
+$('btnRemove').addEventListener('click',function(){
+  if(!selId){ toast('Select a body first — turn on Edit Board, then click one.'); return; }
+  state.bodies=state.bodies.filter(r=>r.id!==selId&&r.parent!==selId);
+  for(const r of state.bodies) if(r.pair===selId) r.pair=null;
+  selId=0; rebuildIndex(); buildBodies(); refreshUI(); save();
+});
+$('btnResetBoard').addEventListener('click',function(){
+  loadModel(state.model); buildBodies(); refreshUI(); save();
+  toast('Layout reset to the '+MODELS[state.model].name+' preset.');
+});
+$('modelSel').addEventListener('change',function(){
+  const k=$('modelSel').value;
+  if(!unlockedModel(k)){ $('modelSel').value=state.model; return; }
+  loadModel(k); buildBodies(); refreshUI(); save();
+  toast('Scale model: '+MODELS[k].name);
+});
+$('btnEdit').addEventListener('click',function(){
+  editMode=!editMode; placeKind=null;
+  $('btnEdit').classList.toggle('on',editMode);
+  $('stage').classList.toggle('edit',editMode);
+  toast(editMode?'Edit mode: drag bodies to reshape the board.':'Edit mode off.');
+  refreshUI();
+});
+$('btnPause').addEventListener('click',function(){
+  paused=!paused;
+  $('btnPause').textContent=paused?'Resume':'Pause';
+  $('btnPause').classList.toggle('on',paused);
+});
+$('btnDilate').addEventListener('click',function(){
+  if(!perk('dilation')||dilateCd>0) return;
+  audio.resume(); timeScale=0.32; dilateT=6; dilateCd=22; refreshUI();
+});
+$('btnCrunch').addEventListener('click',doCrunch);
+
+const tabBtns=document.querySelectorAll('#tabs button');
+for(let i=0;i<tabBtns.length;i++){
+  (function(b){
+    b.addEventListener('click',function(){
+      for(let j=0;j<tabBtns.length;j++) tabBtns[j].classList.remove('on');
+      const tabs=document.querySelectorAll('.tab');
+      for(let j=0;j<tabs.length;j++) tabs[j].classList.remove('on');
+      b.classList.add('on');
+      $('tab-'+b.dataset.tab).classList.add('on');
+      if(b.dataset.tab==='bod') buildBodies();
+      if(b.dataset.tab==='brd') buildBoard();
+      refreshUI();
+    });
+  })(tabBtns[i]);
+}
+
+$('qSel').addEventListener('change',function(){ state.settings.quality=$('qSel').value; resize(); save(); });
+$('btnMute').addEventListener('click',function(){
+  state.settings.mute=!state.settings.mute;
+  if(!state.settings.mute) audio.resume();
+  refreshUI(); save();
+});
+$('btnMotion').addEventListener('click',function(){ state.settings.motion=!state.settings.motion; refreshUI(); save(); });
+$('btnField').addEventListener('click',function(){ state.settings.field=!state.settings.field; refreshUI(); save(); });
+
+$('btnSave').addEventListener('click',function(){
+  toast(save()?'Saved.':'Could not save — localStorage is blocked. Use Export instead.');
+  refreshUI();
+});
+$('btnExportText').addEventListener('click',function(){
+  $('ioBox').value=serialize(); toast('JSON shown below — copy it somewhere safe.');
+});
+$('btnExportFile').addEventListener('click',function(){
+  try{
+    const blob=new Blob([serialize()],{type:'application/json'});
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download='cosmic-plinko-save.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); },2000);
+    toast('Exported cosmic-plinko-save.json');
+  }catch(e){
+    $('ioBox').value=serialize(); toast('Download blocked here — JSON shown below instead.');
+  }
+});
+$('btnImportFile').addEventListener('click',function(){ $('fileIn').click(); });
+$('fileIn').addEventListener('change',function(){
+  const f=$('fileIn').files&&$('fileIn').files[0];
+  if(!f) return;
+  const fr=new FileReader();
+  fr.onload=function(){ importJSON(String(fr.result)); };
+  fr.onerror=function(){ toast('Could not read that file.'); };
+  fr.readAsText(f); $('fileIn').value='';
+});
+$('btnImportText').addEventListener('click',function(){ importJSON($('ioBox').value); });
+function importJSON(txt){
+  if(!txt||!txt.trim()){ toast('Nothing to import.'); return; }
+  let o;
+  try{ o=JSON.parse(txt); }catch(e){ toast('That is not valid JSON.'); return; }
+  try{
+    applySave(o);
+    meteors.length=0; parts.length=0; texts.length=0; waves.length=0; chainMap.clear();
+    buildAll(); save(); toast('Save imported.');
+  }catch(e){ toast('Import failed: '+e.message); }
+}
+$('btnWipe').addEventListener('click',function(){
+  const b=$('btnWipe');
+  if(b.dataset.armed==='1'){
+    try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+    state=freshState(false); loadModel('inner');
+    meteors.length=0; parts.length=0; texts.length=0; waves.length=0; chainMap.clear();
+    buildAll(); toast('Everything wiped. Fresh universe.');
+    b.dataset.armed='0'; b.textContent='Hard Reset';
+  } else {
+    b.dataset.armed='1'; b.textContent='Really? Click again';
+    setTimeout(function(){ b.dataset.armed='0'; b.textContent='Hard Reset'; },4000);
+  }
+});
+window.addEventListener('keydown',function(e){
+  if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if(e.code==='Space'){ e.preventDefault(); $('btnPause').click(); }
+  else if(e.key==='e'||e.key==='E') $('btnEdit').click();
+  else if(e.key==='t'||e.key==='T') $('btnDilate').click();
+  else if(e.key==='s'||e.key==='S') $('btnSave').click();
+});
+window.addEventListener('beforeunload',function(){ save(); });
+document.addEventListener('visibilitychange',function(){ if(document.hidden) save(); });
+
+/* ==========================================================================
+   BOOT + MAIN LOOP
+   ========================================================================== */
+storageOK=tryStore();
+state=freshState(false);
+makeDot();
+if(!load()) loadModel('inner');
+if(!bodies.length) loadModel(state.model);
+syncTurrets();
+buildAll();
+if(window.ResizeObserver) new ResizeObserver(resize).observe(cv);
+window.addEventListener('resize',resize);
+resize();
+
+let last=performance.now(), acc=0, uiAcc=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.25) dt=0.25;
+  if(document.hidden) return;
+
+  if(!paused&&!crunching){
+    acc+=dt*timeScale;
+    let n=0;
+    while(acc>=STEP&&n<MAX_SUB){ step(STEP); acc-=STEP; n++; }
+    if(n>=MAX_SUB) acc=0;
+  }
+
+  rateAcc+=spsAcc; spsAcc=0; rateT+=dt;
+  if(rateT>=0.5){
+    rateBuf[rateIdx]=rateAcc/rateT; rateIdx=(rateIdx+1)%RATE_N;
+    let sum=0; for(let i=0;i<RATE_N;i++) sum+=rateBuf[i];
+    spsWin=sum/RATE_N;
+    rateAcc=0; rateT=0;
+  }
+
+  render();
+
+  uiAcc+=dt;
+  if(uiAcc>=0.14){ uiAcc=0; refreshUI(); audio.setPad(spsWin); }
+  saveAcc+=dt;
+  if(saveAcc>=5){ saveAcc=0; save(); }
+}
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
