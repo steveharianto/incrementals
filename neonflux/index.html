@@ -266,6 +266,20 @@ const FLIP = {
   R:{px:386, py:852, len:84, rest: Math.PI-0.56, fire: Math.PI+0.50}
 };
 
+// Ball types. The feeder mixes these by weight (see C.wt), so unlocking a type
+// blends it in gradually rather than replacing the standard ball.
+//   grav/rest are multipliers on the global values; rest never exceeds 1 so a
+//   ball can never gain energy on a bounce.
+//   val  = payout multiplier for every target this ball strikes
+//   imm  = immune to the same-target FLOW halving, and builds FLOW twice as fast
+//   split= a bumper POP this ball triggers spawns an extra standard ball
+const BT = [
+  {id:'std', name:'STANDARD', hue:190, r:9,  grav:1.00, rest:1.00, val:1.0, imm:false, split:false},
+  {id:'hvy', name:'HEAVY',    hue:32,  r:12, grav:1.18, rest:0.94, val:2.4, imm:false, split:false},
+  {id:'plz', name:'PLASMA',   hue:186, r:8,  grav:0.95, rest:1.00, val:1.0, imm:true,  split:false},
+  {id:'spl', name:'SPLITTER', hue:310, r:9,  grav:1.00, rest:1.00, val:1.0, imm:false, split:true}
+];
+
 /* =========================================================================
    1. UPGRADE DEFINITIONS
    ========================================================================= */
@@ -316,6 +330,17 @@ const UPG = [
   {id:'burst',      tab:'vol', cur:'s', name:'BURST YIELD',      base:8000, g:1.78, max:30,
    d:'A bumper POP pays out a bigger multiple of its value.',
    e:c=>'pop x'+c.burst.toFixed(0)},
+
+  // ---- BALL FOUNDRY (score) : unlock and weight exotic ball types ----
+  {id:'tHeavy',  tab:'vol', sect:'BALL FOUNDRY', cur:'s', name:'TUNGSTEN FOUNDRY', base:3000, g:1.72, max:10,
+   d:'Blends HEAVY balls into the feed. They fall harder and drain sooner, but every target they strike pays 2.4x.',
+   e:c=>c.wt[1] ? c.mixPct(1)+'% of feed is HEAVY' : 'locked'},
+  {id:'tPlasma', tab:'vol', sect:'BALL FOUNDRY', cur:'s', name:'PLASMA INJECTOR', base:5000, g:1.76, max:10,
+   d:'Blends PLASMA balls into the feed. They ignore the same-target FLOW penalty completely and build FLOW twice as fast.',
+   e:c=>c.wt[2] ? c.mixPct(2)+'% of feed is PLASMA' : 'locked'},
+  {id:'tSplit',  tab:'vol', sect:'BALL FOUNDRY', cur:'s', name:'FISSILE CORE',    base:6000, g:1.78, max:10,
+   d:'Blends SPLITTER balls into the feed. Every bumper POP one triggers buds off another ball, and these splits are the only thing on the table allowed to push past your ball-slot limit.',
+   e:c=>c.wt[3] ? c.mixPct(3)+'% SPLITTER, +'+c.splitOver+' over cap' : 'locked'},
 
   // ---- ARCHITECTURE (chrome) : real geometry on the table ----
   {id:'bumper',     tab:'arc', cur:'c', name:'POP BUMPER',       base:2,   g:1.62, max:9,
@@ -457,6 +482,13 @@ function derive(){
   C.offEff     = Math.min(1, 0.35 + 0.065*L.offEff + 0.05*M.offBoost);
   C.offCap     = (2 + L.offCap) * 3600;
   C.autobuy    = L.autobuy > 0;
+  // feeder mix: standard holds a fixed weight, each unlocked type adds its own
+  C.wt         = [100, 12*L.tHeavy, 12*L.tPlasma, 12*L.tSplit];
+  C.wtSum      = C.wt[0] + C.wt[1] + C.wt[2] + C.wt[3];
+  C.mixPct     = i => (C.wt[i]/C.wtSum*100).toFixed(0);
+  // SPLITTER is the only way to exceed your slot limit. Without this the feeder
+  // keeps the table saturated, splits never fire, and the upgrade is a trap.
+  C.splitOver  = Math.ceil(L.tSplit/3);
 }
 function cost(u){
   const n = G.run.lvl[u.id];
@@ -554,20 +586,22 @@ function award(v, x, y, hue, big){
   if(v > 0) float(x, y, '+'+fmt(v), hue, big);
 }
 
-// FLOW: reward hitting a *different* target than last time
-function touchTarget(id, x, y){
+// FLOW: reward hitting a *different* target than last time.
+// PLASMA balls are immune to the repeat penalty and build FLOW twice as fast.
+function touchTarget(id, x, y, b){
   const R = G.run;
-  if(R.lastTarget === id){
+  const bt = b ? BT[b.t] : BT[0];
+  if(R.lastTarget === id && !bt.imm){
     R.flow = Math.max(C.flowFloor, R.flow * 0.5);
     float(x, y-16, 'SAME', 0, 0);
   } else {
-    R.flow = Math.min(C.flowCap, R.flow + C.flowGain);
+    R.flow = Math.min(C.flowCap, R.flow + C.flowGain * (bt.imm ? 2 : 1));
   }
   R.lastTarget = id; R.flowIdle = 0;
 }
 
-function hitValue(mult){
-  let v = C.base * G.run.flow * mult;
+function hitValue(mult, b){
+  let v = C.base * G.run.flow * mult * (b ? BT[b.t].val : 1);
   if(Math.random() < C.crit) v *= C.critM;
   return v;
 }
@@ -575,15 +609,27 @@ function hitValue(mult){
 /* =========================================================================
    6. PHYSICS
    ========================================================================= */
+// Single construction point for every ball, so type properties can never drift
+// between the feeder, the saucer and a splitter.
+function mkBall(x, y, vx, vy, t){
+  t = t || 0;
+  const bt = BT[t];
+  return {x:x, y:y, vx:vx, vy:vy, r:bt.r, t:t, hue:bt.hue,
+          energy:0, trail:[], laneLock:-1, stall:0};
+}
+function pickType(){
+  let r = Math.random() * C.wtSum;
+  for(let i=0;i<BT.length;i++){ r -= C.wt[i]; if(r <= 0) return i; }
+  return 0;
+}
 function feed(n){
   n = n||1;
   for(let i=0;i<n;i++){
     if(G.balls.length >= C.maxBalls) return;
-    G.balls.push({
-      x: 300 + (Math.random()*2-1)*85, y: 54,
-      vx:(Math.random()*2-1)*60, vy: 170 + Math.random()*90,
-      r: 9, energy: 0, trail: [], laneLock: -1, hue: 190, stall: 0
-    });
+    G.balls.push(mkBall(
+      300 + (Math.random()*2-1)*85, 54,
+      (Math.random()*2-1)*60, 170 + Math.random()*90,
+      pickType()));
   }
 }
 
@@ -647,7 +693,7 @@ function physics(dt){
       }
     }
 
-    b.vy += GRAV * C.grav * dt;
+    b.vy += GRAV * C.grav * BT[b.t].grav * dt;
 
     // ---- anti-stall watchdog ----------------------------------------
     // A ball can wedge between two colliders (typically the inlane wall and a
@@ -711,8 +757,8 @@ function physics(dt){
         const kickF = 430*C.kick;
         b.vx += nx*kickF; b.vy += ny*kickF;
         b.energy += imp*0.5 + 14;
-        touchTarget(3000+k, cp[0], cp[1]);
-        const v = hitValue(3);
+        touchTarget(3000+k, cp[0], cp[1], b);
+        const v = hitValue(3, b);
         award(v, cp[0], cp[1]-14, s.hue, 0);
         G.run.hits++;
         s.glow = 1;
@@ -753,7 +799,7 @@ function physics(dt){
       if(d < rr && d > 0.0001){
         nx/=d; ny/=d;
         b.x = p.x+nx*rr; b.y = p.y+ny*rr;
-        const imp = reflect(b,nx,ny,C.rest,150*C.kick);
+        const imp = reflect(b,nx,ny,C.rest*BT[b.t].rest,150*C.kick);
         b.vx *= C.kick; b.vy *= C.kick;
         onBumper(p, k, b, imp);
       }
@@ -765,8 +811,8 @@ function physics(dt){
       if(s.cd>0) continue;
       if(Math.hypot(b.x-s.x, b.y-s.y) < s.r + b.r){
         s.cd = 0.18; s.spin = 1;
-        touchTarget(1000+k, s.x, s.y);
-        const v = hitValue(9);
+        touchTarget(1000+k, s.x, s.y, b);
+        const v = hitValue(9, b);
         award(v, s.x, s.y-8, 48, 0);
         b.vx *= 1.10; b.vy *= 1.10; b.energy += 12;
         burst(s.x,s.y,10,48,3); ring(s.x,s.y,s.r,s.r+34,48,0.4,2);
@@ -783,7 +829,7 @@ function physics(dt){
         b.vx = (300 - rp.x) * 0.42 + (Math.random()*2-1)*40;
         b.vy = -(900 + 130*Math.random());
         b.laneLock = -1;
-        const v = hitValue(6);
+        const v = hitValue(6, b);
         award(v, rp.x, rp.y-20, 150, 0);
         burst(rp.x,rp.y,20,150,4.5); ring(rp.x,rp.y,10,70,150,0.5,3);
         shake = Math.max(shake, 5);
@@ -799,14 +845,14 @@ function physics(dt){
         if(Math.abs(b.x-bx.x) < bx.w/2+b.r && Math.abs(b.y-bx.y) < bx.h/2+b.r){
           bx.down = true;
           b.vy = -Math.abs(b.vy)*0.85 - 90;
-          touchTarget(2000+k, bx.x, bx.y);
-          const v = hitValue(14);
+          touchTarget(2000+k, bx.x, bx.y, b);
+          const v = hitValue(14, b);
           award(v, bx.x, bx.y-14, 268, 0);
           burst(bx.x,bx.y,16,268,3.5);
           R.hits++;
           if(bank.boxes.every(q=>q.down)){
             bank.reset = 0.7;
-            const bv = hitValue(140);
+            const bv = hitValue(140, b);
             award(bv, bank.x, bank.y-30, 268, 1);
             G.run.chrome += 0.25*C.drainMul;
             ring(bank.x,bank.y,10,150,268,0.7,4);
@@ -835,7 +881,7 @@ function physics(dt){
         if(b.laneLock !== k && !R.lanes[k]){
           b.laneLock = k; R.lanes[k] = true;
           ring(lx,ly,8,46,188,0.5,3); burst(lx,ly,14,188,3);
-          award(hitValue(4), lx, ly, 188, 0);
+          award(hitValue(4, b), lx, ly, 188, 0);
           if(R.lanes[0]&&R.lanes[1]&&R.lanes[2]) jackpot();
         }
       } else if(b.laneLock === k && Math.abs(b.y-ly) > LANE_H){
@@ -876,8 +922,7 @@ function physics(dt){
         const room = Math.max(1, Math.min(3, C.maxBalls - G.balls.length));
         for(let k=0;k<room;k++){
           const a = -Math.PI/2 + (k-1)*0.6;
-          G.balls.push({x:T.saucer.x, y:T.saucer.y, vx:Math.cos(a)*620, vy:Math.sin(a)*620,
-                        r:9, energy:0, trail:[], laneLock:-1, hue:320, stall:0});
+          G.balls.push(mkBall(T.saucer.x, T.saucer.y, Math.cos(a)*620, Math.sin(a)*620, 0));
         }
         burst(T.saucer.x,T.saucer.y,70,320,8); ring(T.saucer.x,T.saucer.y,10,170,320,0.8,5);
         shake = Math.max(shake,14); slowmo(0.2);
@@ -905,12 +950,12 @@ let feedTimer = 0;
 
 function onBumper(p, idx, b, imp){
   const R = G.run;
-  touchTarget(idx, p.x, p.y);
+  touchTarget(idx, p.x, p.y, b);
   p.charge++; p.heat = Math.min(3, p.heat + 0.9);
   b.energy += imp*0.5 + 8;
   R.hits++;
 
-  const v = hitValue(1);
+  const v = hitValue(1, b);
   award(v, p.x, p.y-14, p.hue, 0);
   burst(p.x, p.y, 8 + Math.min(16, imp/60|0), p.hue, 2.6);
   ring(p.x, p.y, p.r, p.r+26, p.hue, 0.32, 2);
@@ -918,7 +963,7 @@ function onBumper(p, idx, b, imp){
 
   if(p.charge >= C.chargeMax){
     p.charge = 0; R.pops++;
-    const bv = hitValue(C.burst);
+    const bv = hitValue(C.burst, b);
     award(bv, p.x, p.y-30, p.hue, 1);
     burst(p.x,p.y,48,p.hue,6.5); ring(p.x,p.y,10,130,p.hue,0.6,4);
     ring(p.x,p.y,10,80,60,0.45,2);
@@ -928,6 +973,14 @@ function onBumper(p, idx, b, imp){
       const dx=o.x-p.x, dy=o.y-p.y, d=Math.hypot(dx,dy)||1;
       if(d < 190){ const f=(1-d/190)*340; o.vx += dx/d*f; o.vy += dy/d*f; }
     }
+    // SPLITTER: a pop it caused buds off a fresh standard ball. This is allowed to
+    // push past maxBalls by C.splitOver, which is the whole point of the type.
+    // Appending is safe here because the ball loop walks backwards.
+    if(BT[b.t].split && G.balls.length < C.maxBalls + C.splitOver){
+      G.balls.push(mkBall(p.x, p.y - p.r - 12, (Math.random()*2-1)*230, -540, 0));
+      float(p.x, p.y-52, 'SPLIT', 310, 0);
+      burst(p.x, p.y, 22, 310, 4.5);
+    }
   }
 }
 
@@ -936,7 +989,7 @@ function jackpot(){
   R.lanes = [false,false,false]; R.jackpots++;
   const ch = C.jackChrome;
   R.chrome += ch;
-  const v = hitValue(400);
+  const v = hitValue(400, null);   // jackpot has no single owning ball
   award(v, 300, 150, 188, 1);
   for(const L of LANES){ burst(L[0],L[1],40,188,7); ring(L[0],L[1],10,140,188,0.8,4); }
   ring(300, 150, 20, 400, 188, 1.0, 6);
@@ -1157,11 +1210,22 @@ function render(){
   }
   ctx.globalCompositeOperation='source-over';
   for(const b of G.balls){
+    const bt = BT[b.t];
+    const fl = bt.imm ? 0.78 + Math.random()*0.22 : 1;      // plasma flickers
     const gg = ctx.createRadialGradient(b.x-3,b.y-3,1,b.x,b.y,b.r);
-    gg.addColorStop(0,'#ffffff'); gg.addColorStop(0.4,hsl(b.hue,60,86)); gg.addColorStop(1,hsl(b.hue,70,42));
-    ctx.shadowColor=hsl(b.hue,100,70); ctx.shadowBlur=20;
+    gg.addColorStop(0,'#ffffff');
+    gg.addColorStop(0.4,hsl(b.hue,60,Math.min(95,86*fl)));
+    gg.addColorStop(1,hsl(b.hue,70,42));
+    ctx.shadowColor=hsl(b.hue,100,70); ctx.shadowBlur=(bt.imm?30:20)*fl;
     ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.283); ctx.fill();
     ctx.shadowBlur=0;
+    if(bt.id==='hvy'){                                       // dense dark core
+      ctx.strokeStyle='rgba(24,12,0,0.8)'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.5,0,6.283); ctx.stroke();
+    } else if(bt.id==='spl'){                                // fissile bright pip
+      ctx.fillStyle='rgba(255,255,255,0.9)';
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.4,0,6.283); ctx.fill();
+    }
   }
 
   // ---- fx ----
@@ -1255,7 +1319,13 @@ function buildPanel(){
   }
   else if(tab==='vol'){
     h += '<p class="hint">What each impact is <b>worth</b>. The key stat is <b>FLOW</b>: it rises every time a ball strikes a target it did not just hit, and halves when it hits the same one twice. Spread your targets out.</p>';
-    h += UPG.filter(u=>u.tab==='vol').map(upRow).join('');
+    let sect = '';
+    for(const u of UPG){
+      if(u.tab !== 'vol') continue;
+      const s = u.sect || '';
+      if(s !== sect){ sect = s; if(s) h += '<div class="sect">'+s+'</div>'; }
+      h += upRow(u);
+    }
   }
   else if(tab==='arc'){
     h += '<p class="hint">Spend <b>Chrome</b> to bolt real objects onto the playfield. Chrome comes from the <b>DRAIN MARKET</b> (a draining ball sells its momentum) and from <b>JACKPOTS</b> (light all three top lanes).</p>';
@@ -1295,6 +1365,8 @@ function buildPanel(){
     h += '<div class="sect">CONTROL</div>';
     h += '<div class="kv"><span>Flippers</span><span data-kv="mode">AUTO</span></div>';
     h += '<div class="kv"><span>Balls in play</span><span data-kv="balls">0</span></div>';
+    h += '<div class="kv"><span>Ball mix (live)</span><span data-kv="mix">empty</span></div>';
+    h += '<div class="kv"><span>Feeder mix</span><span data-kv="feedmix">100% std</span></div>';
     h += '<div class="kv"><span>FLOW</span><span data-kv="flow">x1.00</span></div>';
     h += '<p class="hint">Toggle with the button on the table or press <b>M</b>. In MANUAL, <b>Z</b>/<b>&larr;</b> and <b>X</b>/<b>&rarr;</b> drive the flippers and the auto-sensors stand down. Flippers turn gold while you have control. Switching tabs away hands them back to the machine so your offline rate never collapses.</p>';
     h += '<div class="sect">SESSION</div>';
@@ -1330,6 +1402,16 @@ function cabName(){ const i=G.meta.machines; return 'Cabinet '+(CAB[i]||('Mk '+(
 const KV = {
   mode:   ()=> G.ui.flipMode==='manual' ? 'MANUAL' : 'AUTO',
   balls:  ()=> G.balls.length+' / '+C.maxBalls,
+  mix:    ()=>{
+    if(!G.balls.length) return 'empty';
+    const n = [0,0,0,0];
+    for(const b of G.balls) n[b.t]++;
+    const parts = [];
+    for(let i=0;i<BT.length;i++) if(n[i]) parts.push(n[i]+' '+BT[i].id);
+    return parts.join(' \u00b7 ');
+  },
+  feedmix:()=> BT.map((t,i)=> C.wt[i] ? C.mixPct(i)+'% '+t.id : null)
+              .filter(Boolean).join(' \u00b7 '),
   flow:   ()=> 'x'+G.run.flow.toFixed(2)+'  (cap x'+C.flowCap+')',
   hits:   ()=> fmt(G.run.hits),
   pops:   ()=> fmt(G.run.pops),
@@ -1601,7 +1683,7 @@ cv.addEventListener('pointerdown', ev=>{
     const q=T.bumpers[k];
     if(Math.hypot(q.x-p[0], q.y-p[1]) < q.r+8){
       q.charge = C.chargeMax - 1;
-      onBumper(q, k, {x:q.x,y:q.y,vx:0,vy:0,energy:0}, 300);
+      onBumper(q, k, {x:q.x,y:q.y,vx:0,vy:0,energy:0,t:0}, 300);
       return;
     }
   }
