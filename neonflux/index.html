@@ -564,6 +564,9 @@ function part(x,y,vx,vy,hue,life,sz){
   p.x=x; p.y=y; p.vx=vx; p.vy=vy; p.hue=hue; p.l=life; p.L=life; p.sz=sz||2;
 }
 function burst(x,y,n,hue,pow){
+  // particle density is the main cosmetic dial; always emit at least one so
+  // every hit still reads as a hit even at minimum quality
+  if(QC.p < 1){ n = Math.round(n*QC.p); if(n < 1) n = 1; }
   for(let i=0;i<n;i++){
     const a = Math.random()*TAU, s = (0.3+Math.random())*pow;
     part(x,y,Math.cos(a)*s, Math.sin(a)*s, hue+(Math.random()*30-15), 0.30+Math.random()*0.45, 1+Math.random()*2.4);
@@ -597,6 +600,48 @@ function stepFX(dt){
 }
 let hitstop = 0;
 function slowmo(d){ hitstop = d; tsTarget = 0.34; }
+
+/* =========================================================================
+   4b. ADAPTIVE QUALITY GOVERNOR
+   Measures how long our own physics+render work takes each frame and scales
+   COSMETICS ONLY. Physics, scoring, ball counts and payouts are never touched,
+   so a slow machine plays an identical game with less confetti.
+   Work time is used rather than inter-frame time so a 30Hz or 120Hz display
+   does not skew the reading.
+   ========================================================================= */
+const QLV = [
+  {p:0.18, bloom:0, tiers:1, glow:false, name:'minimal'},
+  {p:0.35, bloom:4, tiers:2, glow:false, name:'low'},
+  {p:0.60, bloom:2, tiers:3, glow:true,  name:'medium'},
+  {p:1.00, bloom:2, tiers:4, glow:true,  name:'full'}
+];
+let qi = QLV.length-1, QC = QLV[qi];
+let workEMA = 6, fpsEMA = 60, overT = 0, underT = 0;
+
+function setQuality(i){
+  i = i < 0 ? 0 : (i > QLV.length-1 ? QLV.length-1 : i);
+  if(i === qi) return;
+  const up = i > qi;
+  qi = i; QC = QLV[i];
+  if(QC.bloom){
+    const w = (TW/QC.bloom)|0, h = (TH/QC.bloom)|0;
+    if(bcv.width !== w || bcv.height !== h){ bcv.width = w; bcv.height = h; }
+  }
+  toast('GRAPHICS '+(up?'\u2191':'\u2193')+' '+QC.name.toUpperCase()+
+        '  ('+workEMA.toFixed(1)+'ms/frame)');
+}
+
+// Called once per frame with the measured cost of that frame's own work.
+function governor(dt, work){
+  if(work > 100) return;              // GC pause / tab switch: not a real signal
+  workEMA += (work - workEMA) * 0.12;
+  fpsEMA  += (1/(dt > 0.001 ? dt : 0.001) - fpsEMA) * 0.06;
+  if(workEMA > 12){ overT += dt; underT = 0; }
+  else if(workEMA < 7){ underT += dt; overT = 0; }
+  else { overT = 0; underT = 0; }
+  if(overT > 1.2){ overT = 0; setQuality(qi-1); }        // drop fast
+  else if(underT > 4){ underT = 0; setQuality(qi+1); }   // recover slowly
+}
 
 /* =========================================================================
    5. SCORING
@@ -1273,9 +1318,10 @@ function render(){
   }
 
   // ---- balls + trails ----
-  // Trails draw as 4 tapered tiers per ball rather than one stroke per segment.
+  // Trails draw as a few tapered tiers per ball rather than one stroke per
+  // segment; the tier count is a quality dial.
   ctx.globalCompositeOperation='lighter';
-  const TIERS = 4, PER = TRAIL/TIERS;
+  const TIERS = QC.tiers, PER = TRAIL/TIERS;
   for(const b of G.balls){
     if(b.tn < 3) continue;
     const t = b.trail;
@@ -1341,23 +1387,27 @@ function render(){
     ctx.font = (t.big?'900 ':'bold ')+sz+'px ui-monospace,monospace';
     if(t.big){ ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,'+a+')'; ctx.strokeText(t.txt,t.x,t.y); }
     ctx.fillStyle = t.hue? hsl(t.hue,100,78,a) : 'rgba(255,90,120,'+a+')';
-    ctx.shadowColor = t.hue? hsl(t.hue,100,60) : '#f36'; ctx.shadowBlur = t.big?22:10;
+    if(QC.glow){
+      ctx.shadowColor = t.hue? hsl(t.hue,100,60) : '#f36'; ctx.shadowBlur = t.big?22:10;
+    }
     ctx.fillText(t.txt, t.x, t.y);
     ctx.shadowBlur=0;
   }
 
   ctx.restore();
 
-  // ---- bloom pass ----
-  bctx.clearRect(0,0,bcv.width,bcv.height);
-  bctx.drawImage(cv,0,0,bcv.width,bcv.height);
-  ctx.save();
-  ctx.globalCompositeOperation='lighter';
-  ctx.globalAlpha=0.46;
-  if(ctx.filter !== undefined) ctx.filter='blur(3px)';
-  ctx.drawImage(bcv,0,0,TW,TH);
-  ctx.filter='none';
-  ctx.restore();
+  // ---- bloom pass (skipped entirely at minimum quality) ----
+  if(QC.bloom){
+    bctx.clearRect(0,0,bcv.width,bcv.height);
+    bctx.drawImage(cv,0,0,bcv.width,bcv.height);
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=0.46;
+    if(ctx.filter !== undefined) ctx.filter='blur(3px)';
+    ctx.drawImage(bcv,0,0,TW,TH);
+    ctx.filter='none';
+    ctx.restore();
+  }
 }
 
 /* =========================================================================
@@ -1470,6 +1520,9 @@ function buildPanel(){
     h += '<div class="kv"><span>Chrome (exact)</span><span data-kv="chrome">0</span></div>';
     h += '<div class="kv"><span>Best score</span><span data-kv="best">0</span></div>';
     h += '<div class="sect">DIAGNOSTICS</div>';
+    h += '<div class="kv"><span>Performance</span><span data-kv="perf">-</span></div>';
+    h += '<div class="kv"><span>Graphics quality</span><span data-kv="qual">-</span></div>';
+    h += '<p class="hint">Quality is measured, not guessed: the game times its own physics and render work each frame and steps <b>particle density, trail detail and bloom</b> down if it exceeds budget, back up when there is headroom. Physics, scoring and ball counts are never affected \u2014 a slow machine plays the identical game with less confetti.</p>';
     h += '<div class="kv"><span>Storage</span><span>'+(canStore?'localStorage':'session only')+'</span></div>';
     h += '<div class="kv"><span>Cabinet</span><span>'+cabName()+'</span></div>';
     h += '<div class="sect">SAVE DATA</div>';
@@ -1506,6 +1559,8 @@ const KV = {
   feedmix:()=> BT.map((t,i)=> C.wt[i] ? C.mixPct(i)+'% '+t.id : null)
               .filter(Boolean).join(' \u00b7 '),
   flow:   ()=> 'x'+G.run.flow.toFixed(2)+'  (cap x'+C.flowCap+')',
+  perf:   ()=> Math.round(fpsEMA)+' fps \u00b7 '+workEMA.toFixed(1)+'ms',
+  qual:   ()=> QC.name.toUpperCase()+'  ('+(qi+1)+'/'+QLV.length+')',
   hits:   ()=> fmt(G.run.hits),
   pops:   ()=> fmt(G.run.pops),
   jacks:  ()=> fmt(G.run.jackpots),
@@ -1834,6 +1889,8 @@ function frame(now){
   if(dt > 0.25) dt = 0.25;                    // tab was hidden / stall
   const sdt = dt * timeScale;
 
+  const wt0 = performance.now();              // start of our own work
+
   acc += sdt;
   let steps = 0;
   while(acc >= DT && steps < MAXSUB){ physics(DT); acc -= DT; steps++; }
@@ -1850,6 +1907,9 @@ function frame(now){
   abT += dt; if(abT > 0.25){ abT = 0; autobuyTick(); }
 
   render();
+
+  // physics+render cost only; DOM work below runs at 10Hz and would add spikes
+  governor(dt, performance.now() - wt0);
 
   uiT += dt;
   if(uiT > 0.1){ uiT = 0; hud(); refreshPanel(); }
